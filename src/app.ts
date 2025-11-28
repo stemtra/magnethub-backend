@@ -1,0 +1,145 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import session from 'express-session';
+import MongoStore from 'connect-mongo';
+
+import { config } from './config/index.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { logger } from './utils/logger.js';
+
+// Import passport configuration (this sets up strategies)
+import passport from './config/passport.js';
+
+// Import routes
+import authRoutes from './routes/auth.js';
+import leadMagnetRoutes from './routes/leadMagnets.js';
+import publicRoutes from './routes/public.js';
+
+const app = express();
+
+// ============================================
+// Security Middleware
+// ============================================
+
+app.use(helmet({
+  contentSecurityPolicy: config.isProd ? undefined : false, // Disable in dev for easier debugging
+}));
+
+// ============================================
+// CORS
+// ============================================
+
+app.use(cors({
+  origin: config.clientUrl,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+// ============================================
+// Body Parsing
+// ============================================
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// ============================================
+// Logging
+// ============================================
+
+if (config.isDev) {
+  app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined', {
+    stream: {
+      write: (message: string) => logger.info(message.trim()),
+    },
+  }));
+}
+
+// ============================================
+// Session
+// ============================================
+
+app.use(session({
+  secret: config.sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: config.mongoUri,
+    ttl: 14 * 24 * 60 * 60, // 14 days
+    autoRemove: 'native',
+  }),
+  cookie: {
+    secure: config.isProd,
+    httpOnly: true,
+    maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days
+    sameSite: config.isProd ? 'strict' : 'lax',
+  },
+}));
+
+// ============================================
+// Passport
+// ============================================
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+// ============================================
+// Health Check
+// ============================================
+
+app.get('/health', (_req, res) => {
+  res.json({
+    success: true,
+    data: {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      environment: config.nodeEnv,
+    },
+  });
+});
+
+// ============================================
+// API Routes
+// ============================================
+
+app.use('/api/auth', authRoutes);
+app.use('/api/lead-magnets', leadMagnetRoutes);
+
+// Public routes (landing pages and lead capture)
+app.use('/public', publicRoutes);
+
+// API info route
+app.get('/api', (_req, res) => {
+  res.json({
+    success: true,
+    data: {
+      message: 'MagnetHub API',
+      version: '1.0.0',
+    },
+  });
+});
+
+// ============================================
+// 404 Handler
+// ============================================
+
+app.use((_req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Route not found',
+    code: 'NOT_FOUND',
+  });
+});
+
+// ============================================
+// Error Handler
+// ============================================
+
+app.use(errorHandler);
+
+export default app;
+
