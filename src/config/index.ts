@@ -43,9 +43,9 @@ export const config = {
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   publicUrl: process.env.PUBLIC_URL || 'http://localhost:8080',
 
-  // Rate limiting
+  // Rate limiting (set high for dev, lower for production)
   rateLimit: {
-    freeGenerationsPerDay: 1,
+    freeGenerationsPerDay: parseInt(process.env.FREE_GENERATIONS_PER_DAY || '999999', 10),
   },
 } as const;
 

@@ -36,6 +36,7 @@
     "passport-google-oauth20": "^2.0.0",
     "passport-local": "^1.0.0",
     "pdfkit": "^0.17.2",
+    "puppeteer": "^24.31.0",
     "sanitize-html": "^2.11.0",
     "slugify": "^1.6.6",
     "uuid": "^9.0.1",

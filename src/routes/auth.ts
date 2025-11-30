@@ -33,6 +33,16 @@ const updateProfileSchema = z.object({
     .optional(),
 });
 
+const updateBrandSettingsSchema = z.object({
+  primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color').optional(),
+  accentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color').optional(),
+  backgroundColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color').optional(),
+  textColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color').optional(),
+  fontFamily: z.string().min(1).max(100).optional(),
+  theme: z.enum(['light', 'dark']).optional(),
+  logoUrl: z.string().url().optional().or(z.literal('')),
+});
+
 // ============================================
 // Routes
 // ============================================
@@ -66,6 +76,12 @@ router.get('/me', authController.getCurrentUser);
  * Update user profile
  */
 router.patch('/profile', isAuthenticated, validateBody(updateProfileSchema), authController.updateProfile);
+
+/**
+ * PATCH /api/auth/brand-settings
+ * Update user brand settings
+ */
+router.patch('/brand-settings', isAuthenticated, validateBody(updateBrandSettingsSchema), authController.updateBrandSettings);
 
 /**
  * GET /api/auth/google

@@ -24,6 +24,26 @@ const leadSchema = new Schema<ILead>(
       },
       default: 'pending',
     },
+    // Source tracking
+    referrer: {
+      type: String,
+      trim: true,
+    },
+    source: {
+      type: String,
+      default: 'direct',
+      trim: true,
+      lowercase: true,
+    },
+    medium: {
+      type: String,
+      trim: true,
+      lowercase: true,
+    },
+    campaign: {
+      type: String,
+      trim: true,
+    },
   },
   {
     timestamps: true,
@@ -38,6 +58,7 @@ const leadSchema = new Schema<ILead>(
 leadSchema.index({ email: 1, leadMagnetId: 1 }, { unique: true });
 leadSchema.index({ leadMagnetId: 1, createdAt: -1 });
 leadSchema.index({ deliveryStatus: 1 });
+leadSchema.index({ source: 1 });
 
 // ============================================
 // Transform for JSON

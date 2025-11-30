@@ -9,9 +9,27 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
       required: [true, 'User ID is required'],
       index: true,
     },
+    brandId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Brand',
+      index: true,
+    },
+    sourceType: {
+      type: String,
+      enum: {
+        values: ['website', 'instagram', 'youtube'],
+        message: 'Source type must be one of: website, instagram, youtube',
+      },
+      default: 'website',
+    },
+    sourceUrl: {
+      type: String,
+      required: [true, 'Source URL is required'],
+      trim: true,
+    },
+    // @deprecated - kept for backward compatibility, use sourceUrl instead
     websiteUrl: {
       type: String,
-      required: [true, 'Website URL is required'],
       trim: true,
     },
     audience: {
@@ -31,8 +49,8 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
       type: String,
       required: [true, 'Type is required'],
       enum: {
-        values: ['guide', 'checklist', 'mistakes', 'blueprint'],
-        message: 'Type must be one of: guide, checklist, mistakes, blueprint',
+        values: ['guide', 'checklist', 'mistakes', 'blueprint', 'swipefile', 'cheatsheet', 'casestudy'],
+        message: 'Type must be one of: guide, checklist, mistakes, blueprint, swipefile, cheatsheet, casestudy',
       },
     },
     tone: {
@@ -54,6 +72,9 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
     },
     landingPageHtml: {
       type: String,
+    },
+    landingPageCopyJson: {
+      type: Schema.Types.Mixed, // Store landing page copy for re-rendering
     },
     emailsJson: {
       type: Schema.Types.Mixed, // Store as JSON object

@@ -4,18 +4,22 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
+import path from 'path';
 
 import { config } from './config/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './utils/logger.js';
+import { getLocalPdfPath } from './services/storageService.js';
 
 // Import passport configuration (this sets up strategies)
 import passport from './config/passport.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
+import brandRoutes from './routes/brands.js';
 import leadMagnetRoutes from './routes/leadMagnets.js';
 import publicRoutes from './routes/public.js';
+import analyticsRoutes from './routes/analytics.js';
 
 const app = express();
 
@@ -25,6 +29,8 @@ const app = express();
 
 app.use(helmet({
   contentSecurityPolicy: config.isProd ? undefined : false, // Disable in dev for easier debugging
+  crossOriginEmbedderPolicy: false, // Allow embedding PDFs
+  crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow cross-origin resource access
 }));
 
 // ============================================
@@ -107,7 +113,9 @@ app.get('/health', (_req, res) => {
 // ============================================
 
 app.use('/api/auth', authRoutes);
+app.use('/api/brands', brandRoutes);
 app.use('/api/lead-magnets', leadMagnetRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Public routes (landing pages and lead capture)
 app.use('/public', publicRoutes);
@@ -121,6 +129,34 @@ app.get('/api', (_req, res) => {
       version: '1.0.0',
     },
   });
+});
+
+// ============================================
+// Serve Local PDFs (Development)
+// ============================================
+
+app.get('/api/pdfs/:filename', async (req, res) => {
+  const { filename } = req.params;
+  
+  // Security: prevent directory traversal
+  const safeFilename = path.basename(filename);
+  
+  const filePath = await getLocalPdfPath(safeFilename);
+  
+  if (!filePath) {
+    return res.status(404).json({
+      success: false,
+      error: 'PDF not found',
+      code: 'NOT_FOUND',
+    });
+  }
+
+  // Allow embedding in iframes from our client
+  res.removeHeader('X-Frame-Options');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"`);
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.sendFile(filePath);
 });
 
 // ============================================

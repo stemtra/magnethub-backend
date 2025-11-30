@@ -5,18 +5,26 @@ import { User } from '../models/User.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
-import type { AuthenticatedRequest, IUserPublic, ApiResponse } from '../types/index.js';
+import type { AuthenticatedRequest, IUserPublic, ApiResponse, IBrandSettings, IUser } from '../types/index.js';
 
 // ============================================
 // Helper Functions
 // ============================================
 
-function sanitizeUser(user: { _id: { toString(): string }; email: string; name: string; username: string; createdAt: Date }): IUserPublic {
+function sanitizeUser(user: { 
+  _id: { toString(): string }; 
+  email: string; 
+  name: string; 
+  username: string; 
+  brandSettings?: IBrandSettings;
+  createdAt: Date;
+}): IUserPublic {
   return {
     id: user._id.toString(),
     email: user.email,
     name: user.name,
     username: user.username,
+    brandSettings: user.brandSettings,
     createdAt: user.createdAt,
   };
 }
@@ -237,6 +245,63 @@ export async function updateProfile(
     }
 
     logger.info('User profile updated', { userId: user._id });
+
+    res.json({
+      success: true,
+      data: { user: sanitizeUser(user) },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ============================================
+// Update Brand Settings
+// ============================================
+
+export async function updateBrandSettings(
+  req: AuthenticatedRequest,
+  res: Response<ApiResponse<{ user: IUserPublic }>>,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw AppError.unauthorized();
+    }
+
+    const { 
+      primaryColor, 
+      accentColor, 
+      backgroundColor, 
+      textColor, 
+      fontFamily, 
+      theme, 
+      logoUrl 
+    } = req.body;
+
+    // Build brand settings update - merge with existing
+    const currentBrand = req.user.brandSettings || {};
+    const brandSettings: Partial<IBrandSettings> = {
+      primaryColor: primaryColor ?? currentBrand.primaryColor ?? '#0C0C0C',
+      accentColor: accentColor ?? currentBrand.accentColor ?? '#10B981',
+      backgroundColor: backgroundColor ?? currentBrand.backgroundColor ?? '#0C0C0C',
+      textColor: textColor ?? currentBrand.textColor ?? '#FAFAFA',
+      fontFamily: fontFamily ?? currentBrand.fontFamily ?? 'Plus Jakarta Sans',
+      theme: theme ?? currentBrand.theme ?? 'dark',
+      logoUrl: logoUrl ?? currentBrand.logoUrl,
+    };
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { brandSettings },
+      { new: true, runValidators: true }
+    );
+
+    if (!user) {
+      throw AppError.notFound('User not found');
+    }
+
+    logger.info('Brand settings updated', { userId: user._id });
 
     res.json({
       success: true,

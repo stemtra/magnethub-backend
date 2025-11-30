@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{title}}</title>
+  <meta name="description" content="{{description}}">
+  <meta property="og:title" content="{{title}}">
+  <meta property="og:description" content="{{description}}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family={{fontFamilyEncoded}}:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    :root {
+      --brand-primary: {{primaryColor}};
+      --brand-accent: {{accentColor}};
+      --brand-bg: {{backgroundColor}};
+      --brand-text: {{textColor}};
+      --brand-text-muted: {{textMuted}};
+      --brand-surface: {{surfaceColor}};
+      --brand-border: {{borderColor}};
+      --brand-font: '{{fontFamily}}', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --accent-glow: {{accentGlow}};
+    }
+    
+    html { scroll-behavior: smooth; }
+    
+    body {
+      font-family: var(--brand-font);
+      background: var(--brand-bg);
+      color: var(--brand-text);
+      min-height: 100vh;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    /* Bold Hero Background */
+    .hero-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+    }
+    
+    .hero-bg::before {
+      content: '';
+      position: absolute;
+      top: -20%;
+      left: -10%;
+      width: 60%;
+      height: 80%;
+      background: linear-gradient(135deg, var(--brand-accent) 0%, transparent 60%);
+      opacity: 0.15;
+      border-radius: 50%;
+      filter: blur(80px);
+    }
+    
+    .hero-bg::after {
+      content: '';
+      position: absolute;
+      bottom: -10%;
+      right: -10%;
+      width: 50%;
+      height: 60%;
+      background: var(--brand-accent);
+      opacity: 0.1;
+      border-radius: 50%;
+      filter: blur(100px);
+    }
+    
+    /* Container */
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 40px 24px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 80px;
+    }
+    
+    .logo img {
+      height: 44px;
+      width: auto;
+    }
+    
+    .logo-placeholder {
+      width: 44px;
+      height: 44px;
+      background: var(--brand-accent);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .logo-placeholder svg {
+      width: 22px;
+      height: 22px;
+      stroke: var(--brand-bg);
+      fill: none;
+      stroke-width: 2;
+    }
+    
+    /* Hero */
+    .hero {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      max-width: 800px;
+    }
+    
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 20px;
+      background: var(--brand-accent);
+      border-radius: 100px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: {{buttonTextColor}};
+      margin-bottom: 32px;
+      width: fit-content;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    h1 {
+      font-size: clamp(3rem, 10vw, 5rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.0;
+      margin-bottom: 28px;
+    }
+    
+    .subheadline {
+      font-size: clamp(1.25rem, 3vw, 1.5rem);
+      color: var(--brand-text-muted);
+      line-height: 1.6;
+      max-width: 600px;
+      margin-bottom: 48px;
+    }
+    
+    /* Benefits Row */
+    .benefits {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      margin-bottom: 48px;
+    }
+    
+    .benefit {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .benefit-icon {
+      width: 28px;
+      height: 28px;
+      background: var(--brand-accent);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .benefit-icon svg {
+      width: 16px;
+      height: 16px;
+      stroke: var(--brand-bg);
+      fill: none;
+      stroke-width: 2.5;
+    }
+    
+    .benefit-text {
+      font-size: 1rem;
+      font-weight: 500;
+    }
+    
+    /* Form Row */
+    .form-row {
+      display: flex;
+      gap: 12px;
+      max-width: 500px;
+    }
+    
+    .form-input {
+      flex: 1;
+      padding: 18px 24px;
+      font-size: 1rem;
+      font-family: inherit;
+      background: var(--brand-surface);
+      border: 2px solid var(--brand-border);
+      border-radius: 16px;
+      color: var(--brand-text);
+      outline: none;
+      transition: all 0.2s;
+    }
+    
+    .form-input:focus {
+      border-color: var(--brand-accent);
+      box-shadow: 0 0 0 4px var(--accent-glow);
+    }
+    
+    .form-input::placeholder {
+      color: var(--brand-text-muted);
+    }
+    
+    .form-button {
+      padding: 18px 36px;
+      font-size: 1rem;
+      font-weight: 700;
+      font-family: inherit;
+      background: var(--brand-accent);
+      color: {{buttonTextColor}};
+      border: none;
+      border-radius: 16px;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    
+    .form-button:hover {
+      transform: scale(1.02);
+      box-shadow: 0 12px 40px var(--accent-glow);
+    }
+    
+    .form-note {
+      margin-top: 16px;
+      font-size: 0.8125rem;
+      color: var(--brand-text-muted);
+    }
+    
+    /* Footer */
+    .footer {
+      margin-top: 60px;
+      font-size: 0.75rem;
+      color: var(--brand-text-muted);
+    }
+    
+    .footer a {
+      color: var(--brand-text-muted);
+      text-decoration: none;
+    }
+    
+    .footer a:hover {
+      color: var(--brand-text);
+    }
+    
+    @media (max-width: 640px) {
+      .header { margin-bottom: 60px; }
+      .benefits { flex-direction: column; gap: 16px; }
+      .form-row { flex-direction: column; }
+      .form-button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="hero-bg"></div>
+  
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        {{#if logoUrl}}
+        <img src="{{logoUrl}}" alt="Logo">
+        {{else}}
+        <div class="logo-placeholder">
+          <svg viewBox="0 0 24 24">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        {{/if}}
+      </div>
+    </header>
+    
+    <main class="hero">
+      <div class="badge">Free Download</div>
+      
+      <h1>{{headline}}</h1>
+      
+      <p class="subheadline">{{subheadline}}</p>
+      
+      <div class="benefits">
+        {{#each benefits}}
+        <div class="benefit">
+          <div class="benefit-icon">
+            <svg viewBox="0 0 24 24">
+              <polyline points="20 6 9 17 4 12" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <span class="benefit-text">{{this}}</span>
+        </div>
+        {{/each}}
+      </div>
+      
+      <form action="{{formAction}}" method="POST">
+        <div class="form-row">
+          <input type="email" name="email" class="form-input" placeholder="Enter your email" required autocomplete="email">
+          <button type="submit" class="form-button">{{cta}}</button>
+        </div>
+      </form>
+      
+      <p class="form-note">Join thousands who already downloaded. No spam, ever.</p>
+    </main>
+    
+    <footer class="footer">
+      <a href="https://magnethub.ai" target="_blank" rel="noopener">Powered by MagnetHub</a>
+    </footer>
+  </div>
+</body>
+</html>
+

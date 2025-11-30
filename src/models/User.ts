@@ -1,6 +1,25 @@
 import mongoose, { Schema } from 'mongoose';
 import bcrypt from 'bcryptjs';
-import type { IUser } from '../types/index.js';
+import type { IUser, IBrandSettings } from '../types/index.js';
+
+// Sub-schema for brand settings
+const brandSettingsSchema = new Schema<IBrandSettings>(
+  {
+    primaryColor: { type: String, default: '#0C0C0C' },
+    accentColor: { type: String, default: '#10B981' },
+    backgroundColor: { type: String, default: '#0C0C0C' },
+    textColor: { type: String, default: '#FAFAFA' },
+    fontFamily: { type: String, default: 'Plus Jakarta Sans' },
+    theme: { type: String, enum: ['light', 'dark'], default: 'dark' },
+    logoUrl: { type: String },
+    landingPageTemplate: { 
+      type: String, 
+      enum: ['minimal', 'bold', 'split', 'classic'], 
+      default: 'minimal' 
+    },
+  },
+  { _id: false }
+);
 
 const userSchema = new Schema<IUser>(
   {
@@ -37,6 +56,10 @@ const userSchema = new Schema<IUser>(
       type: String,
       sparse: true, // Allow null/undefined but ensure uniqueness when present
       unique: true,
+    },
+    brandSettings: {
+      type: brandSettingsSchema,
+      default: undefined,
     },
   },
   {

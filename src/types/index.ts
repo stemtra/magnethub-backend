@@ -5,6 +5,19 @@ import type { Document, Types } from 'mongoose';
 // User Types
 // ============================================
 
+export type LandingPageTemplate = 'minimal' | 'bold' | 'split' | 'classic';
+
+export interface IBrandSettings {
+  primaryColor: string;
+  accentColor: string;
+  backgroundColor: string;
+  textColor: string;
+  fontFamily: string;
+  theme: 'light' | 'dark';
+  logoUrl?: string;
+  landingPageTemplate?: LandingPageTemplate;
+}
+
 export interface IUser extends Document {
   _id: Types.ObjectId;
   email: string;
@@ -12,6 +25,7 @@ export interface IUser extends Document {
   name: string;
   username: string;
   googleId?: string;
+  brandSettings?: IBrandSettings;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -22,7 +36,31 @@ export interface IUserPublic {
   email: string;
   name: string;
   username: string;
+  brandSettings?: IBrandSettings;
   createdAt: Date;
+}
+
+// ============================================
+// Shared Types
+// ============================================
+
+export type SourceType = 'website' | 'instagram' | 'youtube';
+
+// ============================================
+// Brand Types
+// ============================================
+
+export interface IBrand extends Document {
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
+  name: string;
+  description?: string;
+  sourceType: SourceType;
+  sourceUrl: string;
+  settings: IBrandSettings;
+  isDefault: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // ============================================
@@ -30,19 +68,30 @@ export interface IUserPublic {
 // ============================================
 
 export type LeadMagnetGoal = 'get_leads' | 'sell_call' | 'grow_list';
-export type LeadMagnetType = 'guide' | 'checklist' | 'mistakes' | 'blueprint';
+export type LeadMagnetType = 
+  | 'guide' 
+  | 'checklist' 
+  | 'mistakes' 
+  | 'blueprint'
+  | 'swipefile'
+  | 'cheatsheet'
+  | 'casestudy';
 export type LeadMagnetTone = 'professional' | 'friendly' | 'expert' | 'persuasive';
 
 export interface ILeadMagnet extends Document {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
-  websiteUrl: string;
+  brandId?: Types.ObjectId; // Reference to the brand used
+  sourceType: SourceType;
+  sourceUrl: string;
+  websiteUrl?: string; // @deprecated - use sourceUrl instead
   audience?: string;
   goal: LeadMagnetGoal;
   type: LeadMagnetType;
   tone: LeadMagnetTone;
   pdfUrl?: string;
   landingPageHtml?: string;
+  landingPageCopyJson?: ILandingPageCopy;
   emailsJson?: IEmailSequence;
   outlineJson?: IOutline;
   metaJson?: IBusinessMeta;
@@ -65,14 +114,86 @@ export interface ILead extends Document {
   email: string;
   leadMagnetId: Types.ObjectId;
   deliveryStatus: DeliveryStatus;
+  // Source tracking
+  referrer?: string;
+  source?: string;
+  medium?: string;
+  campaign?: string;
   createdAt: Date;
+}
+
+// ============================================
+// PageView Types
+// ============================================
+
+export interface IPageView extends Document {
+  _id: Types.ObjectId;
+  leadMagnetId: Types.ObjectId;
+  referrer?: string;
+  source: string;
+  medium?: string;
+  campaign?: string;
+  userAgent?: string;
+  ip?: string;
+  country?: string;
+  createdAt: Date;
+}
+
+// ============================================
+// Instagram Profile Types
+// ============================================
+
+export interface IInstagramPost {
+  caption: string;
+  likes: number;
+  comments: number;
+  isVideo: boolean;
+  timestamp?: string;
+}
+
+export interface IInstagramProfile {
+  username: string;
+  fullName: string;
+  bio: string;
+  followerCount: number;
+  followingCount: number;
+  postsCount: number;
+  profilePicUrl?: string;
+  isVerified: boolean;
+  recentPosts: IInstagramPost[];
+}
+
+// ============================================
+// YouTube Channel Types
+// ============================================
+
+export interface IYouTubeVideo {
+  title: string;
+  description: string;
+  viewCount: number;
+  likeCount: number;
+  publishedAt?: string;
+}
+
+export interface IYouTubeChannel {
+  channelId: string;
+  handle?: string;
+  name: string;
+  description: string;
+  subscriberCount: number;
+  videoCount: number;
+  viewCount: number;
+  thumbnailUrl?: string;
+  bannerUrl?: string;
+  isVerified: boolean;
+  recentVideos: IYouTubeVideo[];
 }
 
 // ============================================
 // AI Pipeline Types
 // ============================================
 
-// Call #1 Output - Website Understanding
+// Call #1 Output - Website/Profile Understanding
 export interface IBusinessMeta {
   business_summary: string;
   product_service_list: string[];
