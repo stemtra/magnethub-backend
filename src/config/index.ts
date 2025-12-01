@@ -24,6 +24,18 @@ export const config = {
   // OpenAI
   openaiApiKey: process.env.OPENAI_API_KEY || '',
 
+  // Stripe
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    prices: {
+      starter: process.env.STRIPE_PRICE_STARTER || '',
+      pro: process.env.STRIPE_PRICE_PRO || '',
+      agency: process.env.STRIPE_PRICE_AGENCY || '',
+    },
+  },
+
   // Cloudflare R2 (S3-compatible)
   r2: {
     accountId: process.env.R2_ACCOUNT_ID || '',
@@ -43,11 +55,33 @@ export const config = {
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   publicUrl: process.env.PUBLIC_URL || 'http://localhost:8080',
 
-  // Rate limiting (set high for dev, lower for production)
-  rateLimit: {
-    freeGenerationsPerDay: parseInt(process.env.FREE_GENERATIONS_PER_DAY || '999999', 10),
+  // Plan limits
+  planLimits: {
+    free: {
+      leadMagnetsTotal: 3, // lifetime limit
+      leadsPerMagnet: 100,
+      brands: 1,
+    },
+    starter: {
+      leadMagnetsPerMonth: 10,
+      leadsPerMagnet: Infinity,
+      brands: 1,
+    },
+    pro: {
+      leadMagnetsPerMonth: 30,
+      leadsPerMagnet: Infinity,
+      brands: 3,
+    },
+    agency: {
+      leadMagnetsPerMonth: 100,
+      leadsPerMagnet: Infinity,
+      brands: Infinity,
+    },
   },
 } as const;
+
+// Plan type
+export type PlanType = 'free' | 'starter' | 'pro' | 'agency';
 
 // Validate required config in production
 export function validateConfig(): void {
@@ -63,7 +97,9 @@ export function validateConfig(): void {
       'GOOGLE_CLIENT_SECRET',
       'R2_ACCESS_KEY_ID',
       'R2_SECRET_ACCESS_KEY',
-      'MAILGUN_API_KEY'
+      'MAILGUN_API_KEY',
+      'STRIPE_SECRET_KEY',
+      'STRIPE_WEBHOOK_SECRET'
     );
   }
 

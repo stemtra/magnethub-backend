@@ -61,6 +61,15 @@ const userSchema = new Schema<IUser>(
       type: brandSettingsSchema,
       default: undefined,
     },
+    // Stripe integration
+    stripeCustomerId: {
+      type: String,
+      sparse: true,
+    },
+    currentSubscriptionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Subscription',
+    },
   },
   {
     timestamps: true,

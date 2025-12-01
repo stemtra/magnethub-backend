@@ -1,12 +1,11 @@
 import type { Response, NextFunction } from 'express';
-import { LeadMagnet } from '../models/LeadMagnet.js';
 import { AppError } from '../utils/AppError.js';
-import { config } from '../config/index.js';
+import { billingService } from '../services/billingService.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 /**
  * Rate limiting middleware for lead magnet generation
- * Limits users to X free generations per day
+ * Checks user's subscription plan and usage limits
  */
 export async function checkGenerationLimit(
   req: AuthenticatedRequest,
@@ -18,20 +17,13 @@ export async function checkGenerationLimit(
       throw AppError.unauthorized();
     }
 
-    // Get start of today (UTC)
-    const startOfDay = new Date();
-    startOfDay.setUTCHours(0, 0, 0, 0);
+    // Check if user can create a lead magnet based on their subscription
+    const { allowed, reason } = await billingService.canUserCreateLeadMagnet(req.user._id.toString());
 
-    // Count generations today
-    const generationsToday = await LeadMagnet.countDocuments({
-      userId: req.user._id,
-      createdAt: { $gte: startOfDay },
-    });
-
-    if (generationsToday >= config.rateLimit.freeGenerationsPerDay) {
+    if (!allowed) {
       throw AppError.tooManyRequests(
-        `You've reached your daily limit of ${config.rateLimit.freeGenerationsPerDay} free generation(s). Upgrade for unlimited access.`,
-        'RATE_LIMIT_EXCEEDED'
+        reason || 'You have reached your lead magnet limit. Please upgrade your plan.',
+        'LIMIT_EXCEEDED'
       );
     }
 
@@ -42,17 +34,10 @@ export async function checkGenerationLimit(
 }
 
 /**
- * Get remaining generations for user today
+ * Get remaining lead magnets for user
  */
 export async function getRemainingGenerations(userId: string): Promise<number> {
-  const startOfDay = new Date();
-  startOfDay.setUTCHours(0, 0, 0, 0);
-
-  const generationsToday = await LeadMagnet.countDocuments({
-    userId,
-    createdAt: { $gte: startOfDay },
-  });
-
-  return Math.max(0, config.rateLimit.freeGenerationsPerDay - generationsToday);
+  const status = await billingService.getUserSubscriptionStatus(userId);
+  return status.leadMagnetsRemaining ?? 0;
 }
 

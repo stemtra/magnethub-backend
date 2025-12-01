@@ -9,6 +9,7 @@ import { generatePdf } from '../services/pdfService.js';
 import { uploadPdf } from '../services/storageService.js';
 import { renderLandingPage } from '../services/templateService.js';
 import { getRemainingGenerations } from '../middleware/rateLimit.js';
+import { billingService } from '../services/billingService.js';
 import { isInstagramUrl, extractUsername, normalizeInstagramUrl } from '../services/instagramService.js';
 import { isYouTubeUrl, extractYouTubeHandle, normalizeYouTubeUrl } from '../services/youtubeService.js';
 import { AppError } from '../utils/AppError.js';
@@ -224,6 +225,9 @@ export async function generate(
       slug,
       isPublished: true,
     });
+
+    // Record usage for billing
+    await billingService.recordLeadMagnetUsage(req.user._id.toString());
 
     logger.info('Lead magnet generated successfully', {
       userId: req.user._id,

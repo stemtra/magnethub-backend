@@ -2,6 +2,53 @@ import type { Request } from 'express';
 import type { Document, Types } from 'mongoose';
 
 // ============================================
+// Subscription Types
+// ============================================
+
+export type PlanType = 'free' | 'starter' | 'pro' | 'agency';
+export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'incomplete' | 'trialing';
+
+export interface ISubscription extends Document {
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
+  plan: PlanType;
+  status: SubscriptionStatus;
+  
+  // Stripe integration
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  stripePriceId?: string;
+  
+  // Billing periods
+  currentPeriodStart: Date;
+  currentPeriodEnd: Date;
+  cancelAtPeriodEnd: boolean;
+  
+  // Usage tracking
+  leadMagnetsCreatedThisPeriod: number;
+  
+  // Lifecycle dates
+  startedAt: Date;
+  canceledAt?: Date;
+  endedAt?: Date;
+  
+  // Metadata
+  metadata?: {
+    source?: string;
+    cancelReason?: string;
+  };
+  
+  createdAt: Date;
+  updatedAt: Date;
+  
+  // Instance methods
+  isActive(): boolean;
+  isPaid(): boolean;
+  canCreateLeadMagnet(): boolean;
+  getLeadMagnetsRemaining(): number;
+}
+
+// ============================================
 // User Types
 // ============================================
 
@@ -26,6 +73,9 @@ export interface IUser extends Document {
   username: string;
   googleId?: string;
   brandSettings?: IBrandSettings;
+  // Stripe
+  stripeCustomerId?: string;
+  currentSubscriptionId?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -37,6 +87,7 @@ export interface IUserPublic {
   name: string;
   username: string;
   brandSettings?: IBrandSettings;
+  plan?: PlanType;
   createdAt: Date;
 }
 

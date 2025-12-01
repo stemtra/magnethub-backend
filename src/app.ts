@@ -20,6 +20,7 @@ import brandRoutes from './routes/brands.js';
 import leadMagnetRoutes from './routes/leadMagnets.js';
 import publicRoutes from './routes/public.js';
 import analyticsRoutes from './routes/analytics.js';
+import billingRoutes from './routes/billing.js';
 
 const app = express();
 
@@ -43,6 +44,12 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// ============================================
+// Stripe Webhook (needs raw body - BEFORE json middleware)
+// ============================================
+
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 
 // ============================================
 // Body Parsing
@@ -116,6 +123,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/brands', brandRoutes);
 app.use('/api/lead-magnets', leadMagnetRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/billing', billingRoutes);
 
 // Public routes (landing pages and lead capture)
 app.use('/public', publicRoutes);
