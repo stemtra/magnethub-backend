@@ -6,4 +6,5 @@ export * from './pdfService.js';
 export * from './storageService.js';
 export * from './emailService.js';
 export * from './templateService.js';
+export * from './slackService.js';
 

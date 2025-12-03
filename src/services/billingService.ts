@@ -49,7 +49,7 @@ class BillingService {
       if (subscription.plan === 'free') {
         return {
           allowed: false,
-          reason: `You've reached your lifetime limit of ${limits.leadMagnetsTotal} free lead magnets. Upgrade to create more!`,
+          reason: `You've reached your lifetime limit of ${limits.leadMagnetsTotal} free lead magnet. Upgrade to create more!`,
         };
       }
 

@@ -52,13 +52,19 @@ export const config = {
   },
 
   // URLs
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
-  publicUrl: process.env.PUBLIC_URL || 'http://localhost:8080',
+  clientUrl: process.env.CLIENT_URL || 'http://localhost:8080',
+  landingUrl: process.env.LANDING_URL || 'http://localhost:3000',
+  publicUrl: process.env.PUBLIC_URL || 'http://localhost:8081',
+
+  // Slack
+  slack: {
+    webhookMagnethubProduction: process.env.SLACK_WEBHOOK_MAGNETHUB_PRODUCTION || '',
+  },
 
   // Plan limits
   planLimits: {
     free: {
-      leadMagnetsTotal: 3, // lifetime limit
+      leadMagnetsTotal: 1, // lifetime limit
       leadsPerMagnet: 100,
       brands: 1,
     },

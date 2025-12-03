@@ -5,6 +5,7 @@ import { User } from '../models/User.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
+import { SlackService } from '../services/slackService.js';
 import type { AuthenticatedRequest, IUserPublic, ApiResponse, IBrandSettings, IUser } from '../types/index.js';
 
 // ============================================
@@ -83,6 +84,13 @@ export async function register(
 
     logger.info('New user registered', { userId: user._id, email });
 
+    // Send Slack notification for new user
+    try {
+      await SlackService.sendNewUserNotification(user.email, user.name);
+    } catch (slackError) {
+      logger.error('Failed to send Slack notification for new user:', slackError as Error);
+    }
+
     // Log the user in
     req.login(user, (err) => {
       if (err) {
@@ -157,10 +165,8 @@ export function logout(
       
       logger.info('User logged out', { userId });
 
-      res.json({
-        success: true,
-        data: { message: 'Logged out successfully' },
-      });
+      // Redirect to landing page
+      res.redirect(config.landingUrl);
     });
   });
 }

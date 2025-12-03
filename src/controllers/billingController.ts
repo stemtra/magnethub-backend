@@ -3,6 +3,7 @@ import { User } from '../models/User.js';
 import { Subscription } from '../models/Subscription.js';
 import { stripeService } from '../services/stripeService.js';
 import { billingService } from '../services/billingService.js';
+import { SlackService } from '../services/slackService.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import { config, PlanType } from '../config/index.js';
@@ -303,7 +304,7 @@ export async function reactivateSubscription(
 }
 
 // ============================================
-// Change Plan
+// Change Plan (Upgrade/Downgrade)
 // ============================================
 
 export async function changePlan(
@@ -332,23 +333,37 @@ export async function changePlan(
       throw AppError.badRequest(`You are already on the ${plan} plan`);
     }
 
-    // Change plan in Stripe
-    const updatedStripeSubscription = await stripeService.changePlan(
-      activeSubscription.stripeSubscriptionId,
-      plan
-    );
+    const oldPlan = activeSubscription.plan;
+
+    // Change plan in Stripe (this will prorate the charges)
+    await stripeService.changePlan(activeSubscription.stripeSubscriptionId, plan);
 
     // Update local subscription
     activeSubscription.plan = plan;
     activeSubscription.stripePriceId = stripeService.getPriceIdForPlan(plan);
     await activeSubscription.save();
 
-    logger.info(`Plan changed for user ${req.user._id}: ${activeSubscription.plan} -> ${plan}`);
+    logger.info(`Plan changed for user ${req.user._id}: ${oldPlan} -> ${plan}`);
+
+    // Send Slack notification for plan change
+    try {
+      const user = await User.findById(req.user._id);
+      if (user) {
+        await SlackService.sendPlanChangeNotification(
+          user.email,
+          user.name,
+          oldPlan,
+          plan
+        );
+      }
+    } catch (slackError) {
+      logger.error('Failed to send Slack notification for plan change:', slackError as Error);
+    }
 
     res.json({
       success: true,
       data: {
-        message: `Successfully switched to ${plan} plan`,
+        message: `Successfully upgraded to ${plan} plan`,
         plan,
       },
     });
@@ -467,6 +482,34 @@ async function handleCheckoutCompleted(session: any): Promise<void> {
       });
 
       logger.info(`Created subscription for user: ${userId}, plan: ${plan}`);
+
+      // Send Slack notification for new subscription
+      try {
+        const user = await User.findById(userId);
+        if (user) {
+          // Get amount from session or use plan prices as fallback (in cents)
+          const planPrices: Record<string, number> = {
+            starter: 2900,  // $29
+            pro: 7900,      // $79
+            agency: 19900,  // $199
+          };
+          const amount = session.amount_total || planPrices[plan] || 0;
+          
+          logger.info(`Sending Slack notification for new subscription: user=${user.email}, plan=${plan}, amount=${amount}`);
+          
+          await SlackService.sendNewSubscriptionNotification(
+            user.email,
+            user.name,
+            plan,
+            'monthly', // Default to monthly, could be enhanced to detect from session
+            amount
+          );
+        } else {
+          logger.warn(`User not found for Slack notification: ${userId}`);
+        }
+      } catch (slackError) {
+        logger.error('Failed to send Slack notification for new subscription:', slackError as Error);
+      }
     }
   } catch (error) {
     logger.error('Error handling checkout completed:', error as Error);
@@ -477,6 +520,10 @@ async function handleSubscriptionUpdated(subscription: any): Promise<void> {
   try {
     const priceId = subscription.items.data[0]?.price?.id;
     const plan = stripeService.getPlanFromPriceId(priceId);
+
+    // Get existing subscription to detect changes
+    const existingSubscription = await Subscription.findOne({ stripeSubscriptionId: subscription.id });
+    const oldPlan = existingSubscription ? existingSubscription.plan : null;
 
     await billingService.handleSubscriptionWebhook({
       subscriptionId: subscription.id,
@@ -490,6 +537,33 @@ async function handleSubscriptionUpdated(subscription: any): Promise<void> {
     });
 
     logger.info(`Subscription updated: ${subscription.id}, status: ${subscription.status}`);
+
+    // Send Slack notifications for meaningful changes
+    try {
+      const user = await User.findOne({ stripeCustomerId: subscription.customer });
+      if (user) {
+        // Plan change notification
+        if (oldPlan && oldPlan !== plan) {
+          await SlackService.sendPlanChangeNotification(
+            user.email,
+            user.name,
+            oldPlan,
+            plan
+          );
+        }
+
+        // Reactivation notification (if cancel_at_period_end changed from true to false)
+        if (existingSubscription?.cancelAtPeriodEnd && !subscription.cancel_at_period_end) {
+          await SlackService.sendSubscriptionReactivatedNotification(
+            user.email,
+            user.name,
+            plan
+          );
+        }
+      }
+    } catch (slackError) {
+      logger.error('Failed to send Slack notification for subscription update:', slackError as Error);
+    }
   } catch (error) {
     logger.error('Error handling subscription updated:', error as Error);
   }
@@ -497,8 +571,26 @@ async function handleSubscriptionUpdated(subscription: any): Promise<void> {
 
 async function handleSubscriptionDeleted(subscription: any): Promise<void> {
   try {
+    // Get subscription info before deletion for notification
+    const existingSubscription = await Subscription.findOne({ stripeSubscriptionId: subscription.id });
+    const user = existingSubscription ? await User.findById(existingSubscription.userId) : null;
+
     await billingService.handleSubscriptionDeleted(subscription.id);
     logger.info(`Subscription deleted: ${subscription.id}`);
+
+    // Send Slack notification for cancellation
+    if (user && existingSubscription) {
+      try {
+        await SlackService.sendSubscriptionCancelledNotification(
+          user.email,
+          user.name,
+          existingSubscription.plan,
+          existingSubscription.metadata?.cancelReason || 'stripe_webhook'
+        );
+      } catch (slackError) {
+        logger.error('Failed to send Slack notification for subscription cancellation:', slackError as Error);
+      }
+    }
   } catch (error) {
     logger.error('Error handling subscription deleted:', error as Error);
   }
@@ -507,7 +599,26 @@ async function handleSubscriptionDeleted(subscription: any): Promise<void> {
 async function handleInvoicePaymentSucceeded(invoice: any): Promise<void> {
   try {
     logger.info(`Invoice payment succeeded: ${invoice.id}, amount: ${invoice.amount_paid / 100}`);
-    // Could send a thank you email here
+
+    // Send Slack notification for recurring payment (only if it's not the first payment)
+    if (invoice.billing_reason === 'subscription_cycle') {
+      try {
+        const user = await User.findOne({ stripeCustomerId: invoice.customer });
+        if (user) {
+          const subscription = await Subscription.findActiveByUserId(user._id.toString());
+          const billingInterval = subscription?.plan === 'starter' ? 'monthly' : 'monthly'; // Could be enhanced
+
+          await SlackService.sendRecurringPaymentNotification(
+            user.email,
+            user.name,
+            invoice.amount_paid,
+            billingInterval
+          );
+        }
+      } catch (slackError) {
+        logger.error('Failed to send Slack notification for recurring payment:', slackError as Error);
+      }
+    }
   } catch (error) {
     logger.error('Error handling invoice payment succeeded:', error as Error);
   }
@@ -516,7 +627,21 @@ async function handleInvoicePaymentSucceeded(invoice: any): Promise<void> {
 async function handleInvoicePaymentFailed(invoice: any): Promise<void> {
   try {
     logger.warn(`Invoice payment failed: ${invoice.id}, amount: ${invoice.amount_due / 100}`);
-    // Could send a payment failed notification email here
+
+    // Send Slack notification for payment failure
+    try {
+      const user = await User.findOne({ stripeCustomerId: invoice.customer });
+      if (user) {
+        await SlackService.sendPaymentFailedNotification(
+          user.email,
+          user.name,
+          invoice.amount_due,
+          invoice.last_payment_error?.message
+        );
+      }
+    } catch (slackError) {
+      logger.error('Failed to send Slack notification for payment failure:', slackError as Error);
+    }
   } catch (error) {
     logger.error('Error handling invoice payment failed:', error as Error);
   }
