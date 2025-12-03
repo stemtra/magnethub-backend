@@ -1,12 +1,14 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import passport from 'passport';
 import { z } from 'zod';
 import { validateBody } from '../middleware/validate.js';
 import { isAuthenticated } from '../middleware/auth.js';
 import * as authController from '../controllers/authController.js';
 import { config } from '../config/index.js';
+import { logger } from '../utils/logger.js';
+import type { AuthenticatedRequest, ApiResponse } from '../types/index.js';
 
-const router = Router();
+const router: Router = Router();
 
 // ============================================
 // Validation Schemas
@@ -69,7 +71,7 @@ router.post('/logout', authController.logout);
  * GET /api/auth/me
  * Get current authenticated user
  */
-router.get('/me', authController.getCurrentUser);
+router.get('/me', isAuthenticated, authController.getCurrentUser);
 
 /**
  * PATCH /api/auth/profile
@@ -94,7 +96,11 @@ router.get('/google', (req, res, next) => {
       error: 'Google OAuth is not configured',
     });
   }
-  passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+  // prompt: 'select_account' forces Google to show account picker every time
+  passport.authenticate('google', {
+    scope: ['profile', 'email'],
+    prompt: 'select_account',
+  })(req, res, next);
 });
 
 /**
@@ -108,6 +114,12 @@ router.get(
   }),
   authController.googleCallback
 );
+
+/**
+ * POST /api/auth/feedback
+ * Submit feedback (authenticated users only)
+ */
+router.post('/feedback', isAuthenticated, authController.submitFeedback);
 
 export default router;
 

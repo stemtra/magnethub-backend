@@ -169,6 +169,51 @@ export class SlackService {
   }
 
   /**
+   * Send notification for user feedback
+   */
+  static async sendFeedbackNotification(category: string | undefined, feedback: string, userEmail?: string): Promise<void> {
+    const categoryEmoji = category ? this.getCategoryEmoji(category) : '💬';
+    const message = `${categoryEmoji} New Feedback Received`;
+    const blocks = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*${categoryEmoji} New User Feedback*\n\n${category ? `*Category:* ${this.formatCategory(category)}\n` : ''}${userEmail ? `*User:* ${userEmail}\n` : ''}*Feedback:* ${feedback}\n*Time:* ${new Date().toLocaleString()}`
+        }
+      }
+    ];
+
+    await this.sendProductionNotification(message, blocks);
+  }
+
+  /**
+   * Get emoji for feedback category
+   */
+  private static getCategoryEmoji(category: string): string {
+    switch (category) {
+      case 'bug': return '🐛';
+      case 'feature': return '✨';
+      case 'improvement': return '🔧';
+      case 'general': return '💬';
+      default: return '💬';
+    }
+  }
+
+  /**
+   * Format category for display
+   */
+  private static formatCategory(category: string): string {
+    switch (category) {
+      case 'bug': return 'Bug Report';
+      case 'feature': return 'Feature Request';
+      case 'improvement': return 'Improvement';
+      case 'general': return 'General Feedback';
+      default: return category;
+    }
+  }
+
+  /**
    * Generic method to send a webhook to Slack
    */
   private static async sendSlackWebhook(webhookUrl: string, message: SlackMessage): Promise<void> {

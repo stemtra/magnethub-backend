@@ -1,12 +1,11 @@
-import type { Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../utils/AppError.js';
-import type { AuthenticatedRequest } from '../types/index.js';
 
 /**
  * Middleware to check if user is authenticated
  */
 export function isAuthenticated(
-  req: AuthenticatedRequest,
+  req: Request,
   _res: Response,
   next: NextFunction
 ): void {
@@ -22,7 +21,7 @@ export function isAuthenticated(
  * Does not throw error if not authenticated
  */
 export function optionalAuth(
-  req: AuthenticatedRequest,
+  req: Request,
   _res: Response,
   next: NextFunction
 ): void {

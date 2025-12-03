@@ -2,7 +2,7 @@ import { Router } from 'express';
 import express from 'express';
 import * as publicController from '../controllers/publicController.js';
 
-const router = Router();
+const router: Router = Router();
 
 // Parse URL-encoded bodies (for form submissions)
 router.use(express.urlencoded({ extended: true }));

@@ -1,4 +1,4 @@
-import type { Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import passport from 'passport';
 import slugify from 'slugify';
 import { User } from '../models/User.js';
@@ -57,7 +57,7 @@ async function generateUniqueUsername(base: string): Promise<string> {
 // ============================================
 
 export async function register(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response<ApiResponse<{ user: IUserPublic }>>,
   next: NextFunction
 ): Promise<void> {
@@ -112,7 +112,7 @@ export async function register(
 // ============================================
 
 export function login(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response<ApiResponse<{ user: IUserPublic }>>,
   next: NextFunction
 ): void {
@@ -145,28 +145,57 @@ export function login(
 // ============================================
 
 export function logout(
-  req: AuthenticatedRequest,
-  res: Response<ApiResponse>,
-  next: NextFunction
+  req: Request,
+  res: Response<ApiResponse>
 ): void {
-  const userId = req.user?._id;
+  const userEmail = (req as AuthenticatedRequest).user?.email || 'unknown';
 
   req.logout((err) => {
     if (err) {
-      return next(err);
+      logger.error('Error during logout', err);
+      const errorResponse: ApiResponse = {
+        success: false,
+        error: err.message,
+        code: 'LOGOUT_ERROR',
+      };
+      res.status(500).json(errorResponse);
+      return;
     }
 
-    req.session.destroy((sessionErr) => {
-      if (sessionErr) {
-        logger.warn('Error destroying session', sessionErr);
+    req.session.destroy((err) => {
+      if (err) {
+        logger.error('Error destroying session', err);
+        const errorResponse: ApiResponse = {
+          success: false,
+          error: err.message,
+          code: 'SESSION_DESTROY_ERROR',
+        };
+        res.status(500).json(errorResponse);
+        return;
       }
 
-      res.clearCookie('connect.sid');
-      
-      logger.info('User logged out', { userId });
+      logger.info(`User ${userEmail} logged out successfully`);
 
-      // Redirect to landing page
-      res.redirect(config.landingUrl);
+      const response: ApiResponse = {
+        success: true,
+        data: { message: 'Logged out successfully' },
+      };
+
+      // Clear session cookie with proper domain for cross-subdomain logout
+      const cookieOptions: any = { path: '/' };
+      if (config.nodeEnv === 'production') {
+        const appUrlObj = new URL(config.clientUrl);
+        const hostParts = appUrlObj.hostname.split('.');
+        if (hostParts.length >= 2) {
+          const baseDomain = hostParts.slice(-2).join('.');
+          cookieOptions.domain = `.${baseDomain}`;
+        }
+      } else {
+        cookieOptions.domain = 'localhost';
+      }
+
+      res.clearCookie('connect.sid', cookieOptions);
+      res.json(response);
     });
   });
 }
@@ -176,13 +205,14 @@ export function logout(
 // ============================================
 
 export function getCurrentUser(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response<ApiResponse<{ user: IUserPublic | null }>>
 ): void {
-  if (req.user) {
+  const authReq = req as AuthenticatedRequest;
+  if (authReq.user) {
     res.json({
       success: true,
-      data: { user: sanitizeUser(req.user) },
+      data: { user: sanitizeUser(authReq.user) },
     });
   } else {
     res.json({
@@ -197,11 +227,12 @@ export function getCurrentUser(
 // ============================================
 
 export function googleCallback(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response
 ): void {
   // Successful authentication, redirect to client
-  logger.info('User authenticated via Google', { userId: req.user?._id });
+  const authReq = req as AuthenticatedRequest;
+  logger.info('User authenticated via Google', { userId: authReq.user?._id });
   res.redirect(`${config.clientUrl}/dashboard`);
 }
 
@@ -210,12 +241,13 @@ export function googleCallback(
 // ============================================
 
 export async function updateProfile(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response<ApiResponse<{ user: IUserPublic }>>,
   next: NextFunction
 ): Promise<void> {
   try {
-    if (!req.user) {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user) {
       throw AppError.unauthorized();
     }
 
@@ -228,9 +260,9 @@ export async function updateProfile(
 
     if (username !== undefined) {
       // Check if username is taken
-      const existingUser = await User.findOne({ 
+      const existingUser = await User.findOne({
         username: username.toLowerCase(),
-        _id: { $ne: req.user._id }
+        _id: { $ne: authReq.user._id }
       });
 
       if (existingUser) {
@@ -241,7 +273,7 @@ export async function updateProfile(
     }
 
     const user = await User.findByIdAndUpdate(
-      req.user._id,
+      authReq.user._id,
       updates,
       { new: true, runValidators: true }
     );
@@ -266,12 +298,13 @@ export async function updateProfile(
 // ============================================
 
 export async function updateBrandSettings(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response<ApiResponse<{ user: IUserPublic }>>,
   next: NextFunction
 ): Promise<void> {
   try {
-    if (!req.user) {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user) {
       throw AppError.unauthorized();
     }
 
@@ -286,7 +319,7 @@ export async function updateBrandSettings(
     } = req.body;
 
     // Build brand settings update - merge with existing
-    const currentBrand = req.user.brandSettings || {};
+    const currentBrand: Partial<IBrandSettings> = authReq.user.brandSettings || {};
     const brandSettings: Partial<IBrandSettings> = {
       primaryColor: primaryColor ?? currentBrand.primaryColor ?? '#0C0C0C',
       accentColor: accentColor ?? currentBrand.accentColor ?? '#10B981',
@@ -298,7 +331,7 @@ export async function updateBrandSettings(
     };
 
     const user = await User.findByIdAndUpdate(
-      req.user._id,
+      authReq.user._id,
       { brandSettings },
       { new: true, runValidators: true }
     );
@@ -312,6 +345,57 @@ export async function updateBrandSettings(
     res.json({
       success: true,
       data: { user: sanitizeUser(user) },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ============================================
+// Submit Feedback (Authenticated Users)
+// ============================================
+
+export async function submitFeedback(
+  req: Request,
+  res: Response<ApiResponse<{ message: string }>>,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user) {
+      throw AppError.unauthorized();
+    }
+
+    const { category, feedback } = req.body;
+
+    // Validate required fields
+    if (!feedback || typeof feedback !== 'string') {
+      throw AppError.badRequest('Feedback is required');
+    }
+
+    if (feedback.trim().length < 10) {
+      throw AppError.badRequest('Feedback must be at least 10 characters long');
+    }
+
+    // Optional category validation
+    if (category && !['bug', 'feature', 'improvement', 'general'].includes(category)) {
+      throw AppError.badRequest('Invalid category');
+    }
+
+    // Send Slack notification (don't await to not block response)
+    SlackService.sendFeedbackNotification(category, feedback.trim(), authReq.user.email).catch((error) => {
+      logger.error('Failed to send feedback Slack notification', error);
+    });
+
+    logger.info('Feedback submitted', {
+      userId: authReq.user._id,
+      category: category || 'none',
+      feedbackLength: feedback.trim().length,
+    });
+
+    res.json({
+      success: true,
+      data: { message: 'Thank you for your feedback!' },
     });
   } catch (error) {
     next(error);
