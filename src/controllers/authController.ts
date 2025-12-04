@@ -6,6 +6,8 @@ import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
 import { SlackService } from '../services/slackService.js';
+import { welcomeEmail } from '../templates/emailTemplates.js';
+import { sendEmail } from '../services/emailService.js';
 import type { AuthenticatedRequest, IUserPublic, ApiResponse, IBrandSettings, IUser } from '../types/index.js';
 
 // ============================================
@@ -89,6 +91,15 @@ export async function register(
       await SlackService.sendNewUserNotification(user.email, user.name);
     } catch (slackError) {
       logger.error('Failed to send Slack notification for new user:', slackError as Error);
+    }
+
+    // Send welcome email
+    try {
+      const demoUrl = `${config.clientUrl}/dashboard`;
+      await sendEmail(welcomeEmail(user.email, user.name, demoUrl));
+    } catch (emailError) {
+      logger.error('Failed to send welcome email:', emailError as Error);
+      // Don't fail registration if email fails
     }
 
     // Log the user in

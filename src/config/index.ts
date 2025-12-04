@@ -48,13 +48,14 @@ export const config = {
   // Mailgun
   mailgun: {
     apiKey: process.env.MAILGUN_API_KEY || '',
-    domain: process.env.MAILGUN_DOMAIN || 'magnethub.ai',
+    domain: process.env.MAILGUN_DOMAIN || 'magnethubai.com',
   },
 
   // URLs
   clientUrl: process.env.CLIENT_URL || 'http://localhost:8080',
   landingUrl: process.env.LANDING_URL || 'http://localhost:3000',
   publicUrl: process.env.PUBLIC_URL || 'http://localhost:8081',
+  logoUrl: process.env.LOGO_URL || 'https://magnethubai.com/logo.png',
 
   // Slack
   slack: {

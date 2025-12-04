@@ -5,6 +5,19 @@ import { logger } from '../utils/logger.js';
 import { Lead } from '../models/Lead.js';
 
 // ============================================
+// Types for Template Emails
+// ============================================
+
+export interface SendEmailArgs {
+  to: string;
+  subject: string;
+  template: {
+    name: string;
+    variables: Record<string, any>;
+  };
+}
+
+// ============================================
 // Mailgun Client
 // ============================================
 
@@ -51,6 +64,46 @@ export async function sendDeliveryEmail(
     // Update lead status to failed
     await Lead.findByIdAndUpdate(leadId, { deliveryStatus: 'failed' });
 
+    return false;
+  }
+}
+
+// ============================================
+// Send Email with Template
+// ============================================
+
+export async function sendEmail(args: SendEmailArgs): Promise<boolean> {
+  if (!mg) {
+    logger.warn('Mailgun not configured, skipping email send');
+    return false;
+  }
+
+  try {
+    logger.info('Sending template email', {
+      to: args.to,
+      template: args.template.name,
+      subject: args.subject
+    });
+
+    await mg.messages.create(config.mailgun.domain, {
+      from: `MagnetHub <noreply@${config.mailgun.domain}>`,
+      to: args.to,
+      subject: args.subject,
+      template: args.template.name,
+      'h:X-Mailgun-Variables': JSON.stringify(args.template.variables),
+    });
+
+    logger.info('Template email sent successfully', {
+      to: args.to,
+      template: args.template.name
+    });
+    return true;
+  } catch (error) {
+    logger.error('Failed to send template email', {
+      to: args.to,
+      template: args.template.name,
+      error
+    });
     return false;
   }
 }
