@@ -44,7 +44,7 @@ class Logger {
         name: data.name,
         message: data.message,
         stack: data.stack,
-        ...(data as Record<string, unknown>), // Include any custom properties
+        ...(data as unknown as Record<string, unknown>), // Include any custom properties
       }, null, 2);
     }
     return JSON.stringify(data, null, 2);

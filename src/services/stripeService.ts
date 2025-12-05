@@ -4,7 +4,7 @@ import { logger } from '../utils/logger.js';
 
 // Initialize Stripe
 const stripe = config.stripe.secretKey
-  ? new Stripe(config.stripe.secretKey, { apiVersion: '2025-04-30.basil' })
+  ? new Stripe(config.stripe.secretKey, { apiVersion: '2025-11-17.clover' })
   : null;
 
 export interface SubscriptionData {

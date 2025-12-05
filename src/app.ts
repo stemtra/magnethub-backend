@@ -21,8 +21,9 @@ import leadMagnetRoutes from './routes/leadMagnets.js';
 import publicRoutes from './routes/public.js';
 import analyticsRoutes from './routes/analytics.js';
 import billingRoutes from './routes/billing.js';
+import sentryRoutes from './routes/sentry.js';
 
-const app = express();
+const app: express.Application = express();
 
 // ============================================
 // Security Middleware
@@ -124,6 +125,7 @@ app.use('/api/brands', brandRoutes);
 app.use('/api/lead-magnets', leadMagnetRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/sentry', sentryRoutes);
 
 // Public routes (landing pages and lead capture)
 app.use('/public', publicRoutes);
@@ -164,7 +166,7 @@ app.get('/api/pdfs/:filename', async (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"`);
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.sendFile(filePath);
+  return res.sendFile(filePath);
 });
 
 // ============================================

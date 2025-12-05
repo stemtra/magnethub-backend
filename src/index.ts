@@ -9,8 +9,18 @@ import { initSentry } from './utils/sentry.js';
 initSentry();
 
 // Handle uncaught errors
-process.on('unhandledRejection', handleUnhandledRejection);
-process.on('uncaughtException', handleUncaughtException);
+process.on('unhandledRejection', (reason) => {
+  handleUnhandledRejection(reason).catch((error) => {
+    logger.error('Error in unhandled rejection handler:', error);
+  });
+});
+process.on('uncaughtException', (error) => {
+  handleUncaughtException(error).catch((slackError) => {
+    logger.error('Error in uncaught exception handler:', slackError);
+    // Still exit even if Slack notification fails
+    process.exit(1);
+  });
+});
 
 async function bootstrap(): Promise<void> {
   try {

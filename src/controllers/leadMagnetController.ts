@@ -92,7 +92,7 @@ export async function generate(
     // ============================================
     
     let brand: IBrand | null = null;
-    let brandToUse: IBrandSettings;
+    let brandToUse: IBrandSettings | null = null;
     let useCachedData = false;
 
     if (brandId) {
@@ -182,14 +182,15 @@ export async function generate(
 
     // Render landing page HTML using template + brand + copy
     const formAction = `/public/${req.user.username}/${slug}/subscribe`;
+    const finalBrandSettings = brandToUse || brand!.settings;
     const landingPageHtml = await renderLandingPage(
-      brandToUse,
+      finalBrandSettings,
       pipelineResult.landingPageCopy,
       formAction
     );
 
     // Generate PDF with brand settings
-    const pdfBuffer = await generatePdf(pipelineResult.content, type, brandToUse, brand.name);
+    const pdfBuffer = await generatePdf(pipelineResult.content, type, finalBrandSettings, brand!.name);
 
     // Upload PDF to storage (local or cloud)
     const filename = `pdfs/${req.user._id}/${slug}-${uuidv4().slice(0, 8)}.pdf`;

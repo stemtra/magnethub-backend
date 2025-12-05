@@ -632,7 +632,7 @@ export async function runFullPipeline(
   };
 
   // Use cached data if available (skip scraping to save resources)
-  if (hasCachedData) {
+  if (hasCachedData && options.cachedData) {
     logger.info('Using cached brand data - skipping web scraping');
     
     // Use cached brand settings or defaults

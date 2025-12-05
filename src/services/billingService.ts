@@ -44,15 +44,16 @@ class BillingService {
       }
 
       const remaining = subscription.getLeadMagnetsRemaining();
-      const limits = config.planLimits[subscription.plan as PlanType];
 
       if (subscription.plan === 'free') {
+        const limits = config.planLimits.free;
         return {
           allowed: false,
           reason: `You've reached your lifetime limit of ${limits.leadMagnetsTotal} free lead magnet. Upgrade to create more!`,
         };
       }
 
+      const limits = config.planLimits[subscription.plan as 'starter' | 'pro' | 'agency'];
       return {
         allowed: false,
         reason: `You've reached your monthly limit of ${limits.leadMagnetsPerMonth} lead magnets. Your limit resets on ${subscription.currentPeriodEnd.toLocaleDateString()}.`,
@@ -82,16 +83,17 @@ class BillingService {
       // Reset usage if needed
       await this.resetUsageIfNeeded(subscription);
 
-      const limits = config.planLimits[subscription.plan as PlanType];
       const isPaid = subscription.isPaid();
 
       let leadMagnetsLimit: number | null = null;
       let leadMagnetsRemaining: number | null = null;
 
       if (subscription.plan === 'free') {
+        const limits = config.planLimits.free;
         leadMagnetsLimit = limits.leadMagnetsTotal;
         leadMagnetsRemaining = subscription.getLeadMagnetsRemaining();
       } else if (isPaid) {
+        const limits = config.planLimits[subscription.plan as 'starter' | 'pro' | 'agency'];
         leadMagnetsLimit = limits.leadMagnetsPerMonth;
         leadMagnetsRemaining = subscription.getLeadMagnetsRemaining();
       }
@@ -241,7 +243,7 @@ class BillingService {
         priceId: subscriptionData.priceId,
         currentPeriodStart: subscriptionData.currentPeriodStart,
         currentPeriodEnd: subscriptionData.currentPeriodEnd,
-      });
+      }) as any;
 
       logger.info(`Created new subscription for user: ${userId}, plan: ${plan}`);
     } else {
@@ -263,7 +265,7 @@ class BillingService {
     }
 
     // Update user's current subscription pointer
-    if (subscriptionData.status === 'active') {
+    if (subscriptionData.status === 'active' && subscription) {
       await User.findByIdAndUpdate(userId, {
         $set: { currentSubscriptionId: subscription._id },
       });

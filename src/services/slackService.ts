@@ -188,6 +188,92 @@ export class SlackService {
   }
 
   /**
+   * Send notification for Sentry errors (backend)
+   */
+  static async sendSentryErrorNotification(error: any, app: 'backend' | 'client' = 'backend'): Promise<void> {
+    const appName = app === 'backend' ? 'Backend' : 'Client';
+    const message = `🚨 ${appName} Error - ${error.title || 'Unknown Error'}`;
+
+    // Extract relevant error information
+    const errorMessage = error.message || error.exception?.values?.[0]?.value || 'No message available';
+    const errorType = error.exception?.values?.[0]?.type || 'Unknown Type';
+    const stackTrace = error.exception?.values?.[0]?.stacktrace?.frames?.slice(-3) || []; // Last 3 frames
+
+    // Format stack trace for Slack
+    const stackText = stackTrace.length > 0
+      ? stackTrace.map((frame: any) => `• ${frame.filename}:${frame.lineno} in ${frame.function || 'unknown'}`).join('\n')
+      : 'No stack trace available';
+
+    const blocks = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*🚨 ${appName} Error Detected*\n\n*Type:* ${errorType}\n*Message:* ${errorMessage}\n*Environment:* ${error.environment || 'Unknown'}\n*Time:* ${new Date(error.timestamp * 1000).toLocaleString()}\n*URL:* ${error.url || 'N/A'}`
+        }
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Stack Trace (last 3 frames):*\n${stackText}`
+        }
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: 'View in Sentry'
+            },
+            url: error.web_url || `https://sentry.io/issues/${error.id}`
+          }
+        ]
+      }
+    ];
+
+    await this.sendProductionNotification(message, blocks);
+  }
+
+  /**
+   * Send notification for Sentry issues (aggregated errors)
+   */
+  static async sendSentryIssueNotification(issue: any, app: 'backend' | 'client' = 'backend'): Promise<void> {
+    const appName = app === 'backend' ? 'Backend' : 'Client';
+    const level = issue.level || 'error';
+    const levelEmoji = level === 'error' ? '🚨' : level === 'warning' ? '⚠️' : 'ℹ️';
+
+    const message = `${levelEmoji} ${appName} Issue - ${issue.title}`;
+
+    const blocks = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*${levelEmoji} ${appName} Issue Alert*\n\n*Title:* ${issue.title}\n*Level:* ${level}\n*Environment:* ${issue.environment || 'Unknown'}\n*Project:* ${issue.project?.name || 'Unknown'}\n*First Seen:* ${new Date(issue.firstSeen).toLocaleString()}\n*Last Seen:* ${new Date(issue.lastSeen).toLocaleString()}\n*Events:* ${issue.count || 0}`
+        }
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: 'View Issue'
+            },
+            url: issue.web_url || issue.permalink
+          }
+        ]
+      }
+    ];
+
+    await this.sendProductionNotification(message, blocks);
+  }
+
+  /**
    * Get emoji for feedback category
    */
   private static getCategoryEmoji(category: string): string {

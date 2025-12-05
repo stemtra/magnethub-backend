@@ -104,24 +104,24 @@ subscriptionSchema.methods.isPaid = function (): boolean {
 subscriptionSchema.methods.canCreateLeadMagnet = function (): boolean {
   if (!this.isActive()) return false;
 
-  const limits = config.planLimits[this.plan as PlanType];
-  
   // Free plan has lifetime limit
   if (this.plan === 'free') {
+    const limits = config.planLimits.free;
     return this.leadMagnetsCreatedThisPeriod < limits.leadMagnetsTotal;
   }
   
   // Paid plans have monthly limit
+  const limits = config.planLimits[this.plan as 'starter' | 'pro' | 'agency'];
   return this.leadMagnetsCreatedThisPeriod < limits.leadMagnetsPerMonth;
 };
 
 subscriptionSchema.methods.getLeadMagnetsRemaining = function (): number {
-  const limits = config.planLimits[this.plan as PlanType];
-  
   if (this.plan === 'free') {
+    const limits = config.planLimits.free;
     return Math.max(0, limits.leadMagnetsTotal - this.leadMagnetsCreatedThisPeriod);
   }
   
+  const limits = config.planLimits[this.plan as 'starter' | 'pro' | 'agency'];
   return Math.max(0, limits.leadMagnetsPerMonth - this.leadMagnetsCreatedThisPeriod);
 };
 
@@ -208,7 +208,7 @@ subscriptionSchema.statics.createPaidSubscription = function (
 // ============================================
 
 subscriptionSchema.set('toJSON', {
-  transform: (_doc, ret) => {
+  transform: (_doc, ret: any) => {
     ret.id = ret._id.toString();
     delete ret._id;
     delete ret.__v;

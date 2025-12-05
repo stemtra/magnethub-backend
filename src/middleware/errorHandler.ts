@@ -4,13 +4,50 @@ import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
 import type { ApiResponse } from '../types/index.js';
 import { captureError, addBreadcrumb, Sentry } from '../utils/sentry.js';
+import { SlackService } from '../services/slackService.js';
 
-export function errorHandler(
+/**
+ * Send error notification to Slack
+ */
+async function notifySlackError(
+  error: Error,
+  context: { type: string; path?: string; method?: string; userId?: string }
+): Promise<void> {
+  try {
+    if (!config.isProd) return; // Only send notifications in production
+
+    const { type, path, method, userId } = context;
+    const errorMessage = `🚨 Backend ${type.charAt(0).toUpperCase() + type.slice(1)} Error`;
+
+    const blocks = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*🚨 Backend Error*\n\n*Type:* ${type}\n*Message:* ${error.message}\n*Path:* ${path || 'N/A'}\n*Method:* ${method || 'N/A'}\n*User ID:* ${userId || 'N/A'}\n*Time:* ${new Date().toLocaleString()}`
+        }
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Stack Trace:*\n\`\`\`${error.stack?.substring(0, 500)}${error.stack && error.stack.length > 500 ? '...' : ''}\`\`\``
+        }
+      }
+    ];
+
+    await SlackService.sendProductionNotification(errorMessage, blocks);
+  } catch (slackError) {
+    logger.error('Failed to send Slack error notification:', slackError);
+  }
+}
+
+export async function errorHandler(
   err: Error,
   req: Request,
   res: Response<ApiResponse>,
   _next: NextFunction
-): void {
+): Promise<void> {
   // Log the error
   if (err instanceof AppError) {
     if (err.statusCode >= 500) {
@@ -29,6 +66,13 @@ export function errorHandler(
         path: req.path,
         method: req.method,
       });
+      // Send Slack notification for server errors
+      await notifySlackError(err, {
+        type: 'server',
+        path: req.path,
+        method: req.method,
+        userId: (req.user as { id?: string })?.id,
+      });
     } else {
       logger.warn('Client error', {
         message: err.message,
@@ -46,6 +90,13 @@ export function errorHandler(
     captureError(err, {
       path: req.path,
       method: req.method,
+    });
+    // Send Slack notification for unhandled errors
+    await notifySlackError(err, {
+      type: 'unhandled',
+      path: req.path,
+      method: req.method,
+      userId: (req.user as { id?: string })?.id,
     });
   }
 
@@ -91,22 +142,31 @@ export function errorHandler(
 }
 
 // Handle unhandled promise rejections
-export function handleUnhandledRejection(reason: unknown): void {
+export async function handleUnhandledRejection(reason: unknown): Promise<void> {
   logger.error('Unhandled Promise Rejection', reason);
+
+  // Send Slack notification
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  await notifySlackError(error, { type: 'unhandledRejection' });
+
   // Capture to Sentry
   captureError(reason, { type: 'unhandledRejection' });
   // Don't exit the process, let the error handler deal with it
 }
 
 // Handle uncaught exceptions
-export function handleUncaughtException(error: Error): void {
+export async function handleUncaughtException(error: Error): Promise<void> {
   logger.error('Uncaught Exception', {
     message: error.message,
     stack: error.stack,
   });
+
+  // Send Slack notification before exiting
+  await notifySlackError(error, { type: 'uncaughtException' });
+
   // Capture to Sentry and flush before exiting
   captureError(error, { type: 'uncaughtException' });
-  
+
   // Give Sentry time to send the error before exiting (only in production)
   if (config.isProd) {
     Sentry.close(2000).then(() => {
