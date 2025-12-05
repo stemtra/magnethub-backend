@@ -3,10 +3,11 @@ import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
 import type { ApiResponse } from '../types/index.js';
+import { captureError, addBreadcrumb, Sentry } from '../utils/sentry.js';
 
 export function errorHandler(
   err: Error,
-  _req: Request,
+  req: Request,
   res: Response<ApiResponse>,
   _next: NextFunction
 ): void {
@@ -17,6 +18,16 @@ export function errorHandler(
         message: err.message,
         code: err.code,
         stack: err.stack,
+      });
+      // Capture 5xx errors to Sentry
+      addBreadcrumb('request', `${req.method} ${req.path}`, {
+        query: req.query,
+        userId: (req.user as { id?: string })?.id,
+      });
+      captureError(err, {
+        code: err.code,
+        path: req.path,
+        method: req.method,
       });
     } else {
       logger.warn('Client error', {
@@ -29,6 +40,12 @@ export function errorHandler(
     logger.error('Unhandled error', {
       message: err.message,
       stack: err.stack,
+    });
+    // Capture unhandled errors to Sentry
+    addBreadcrumb('request', `${req.method} ${req.path}`);
+    captureError(err, {
+      path: req.path,
+      method: req.method,
     });
   }
 
@@ -76,6 +93,8 @@ export function errorHandler(
 // Handle unhandled promise rejections
 export function handleUnhandledRejection(reason: unknown): void {
   logger.error('Unhandled Promise Rejection', reason);
+  // Capture to Sentry
+  captureError(reason, { type: 'unhandledRejection' });
   // Don't exit the process, let the error handler deal with it
 }
 
@@ -85,7 +104,16 @@ export function handleUncaughtException(error: Error): void {
     message: error.message,
     stack: error.stack,
   });
-  // Exit with failure code
-  process.exit(1);
+  // Capture to Sentry and flush before exiting
+  captureError(error, { type: 'uncaughtException' });
+  
+  // Give Sentry time to send the error before exiting (only in production)
+  if (config.isProd) {
+    Sentry.close(2000).then(() => {
+      process.exit(1);
+    });
+  } else {
+    process.exit(1);
+  }
 }
 

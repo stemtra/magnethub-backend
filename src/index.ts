@@ -3,6 +3,10 @@ import { config, validateConfig } from './config/index.js';
 import { connectDatabase } from './utils/database.js';
 import { logger } from './utils/logger.js';
 import { handleUnhandledRejection, handleUncaughtException } from './middleware/errorHandler.js';
+import { initSentry } from './utils/sentry.js';
+
+// Initialize Sentry FIRST (before anything else)
+initSentry();
 
 // Handle uncaught errors
 process.on('unhandledRejection', handleUnhandledRejection);

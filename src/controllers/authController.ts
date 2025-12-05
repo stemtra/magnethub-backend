@@ -8,6 +8,7 @@ import { config } from '../config/index.js';
 import { SlackService } from '../services/slackService.js';
 import { welcomeEmail } from '../templates/emailTemplates.js';
 import { sendEmail } from '../services/emailService.js';
+import { setSentryUser, clearSentryUser } from '../utils/sentry.js';
 import type { AuthenticatedRequest, IUserPublic, ApiResponse, IBrandSettings, IUser } from '../types/index.js';
 
 // ============================================
@@ -108,6 +109,9 @@ export async function register(
         return next(err);
       }
 
+      // Set Sentry user context
+      setSentryUser({ id: user._id.toString(), email: user.email });
+
       res.status(201).json({
         success: true,
         data: { user: sanitizeUser(user) },
@@ -142,6 +146,9 @@ export function login(
       }
 
       logger.info('User logged in', { userId: user._id });
+
+      // Set Sentry user context
+      setSentryUser({ id: user._id.toString(), email: user.email });
 
       res.json({
         success: true,
@@ -186,6 +193,9 @@ export function logout(
       }
 
       logger.info(`User ${userEmail} logged out successfully`);
+
+      // Clear Sentry user context
+      clearSentryUser();
 
       const response: ApiResponse = {
         success: true,
@@ -244,6 +254,12 @@ export function googleCallback(
   // Successful authentication, redirect to client
   const authReq = req as AuthenticatedRequest;
   logger.info('User authenticated via Google', { userId: authReq.user?._id });
+  
+  // Set Sentry user context
+  if (authReq.user) {
+    setSentryUser({ id: authReq.user._id.toString(), email: authReq.user.email });
+  }
+  
   res.redirect(`${config.clientUrl}/dashboard`);
 }
 
