@@ -248,6 +248,9 @@ class BillingService {
       logger.info(`Created new subscription for user: ${userId}, plan: ${plan}`);
     } else {
       // Update existing subscription
+      const previousPeriodStart = subscription.currentPeriodStart;
+      const previousPeriodEnd = subscription.currentPeriodEnd;
+
       subscription.status = subscriptionData.status as any;
       subscription.plan = plan;
       subscription.currentPeriodStart = subscriptionData.currentPeriodStart;
@@ -258,6 +261,20 @@ class BillingService {
       if (subscriptionData.status === 'canceled') {
         subscription.canceledAt = new Date();
         subscription.endedAt = new Date();
+      }
+
+      // Reset usage when a new billing period starts (only for paid plans)
+      const periodStartChanged =
+        previousPeriodStart && subscription.currentPeriodStart
+          ? previousPeriodStart.getTime() !== subscription.currentPeriodStart.getTime()
+          : false;
+      if (
+        periodStartChanged &&
+        subscription.plan !== 'free' &&
+        subscription.leadMagnetsCreatedThisPeriod > 0
+      ) {
+        subscription.leadMagnetsCreatedThisPeriod = 0;
+        logger.info(`Reset lead magnet usage for user ${userId} due to new billing period`);
       }
 
       await subscription.save();

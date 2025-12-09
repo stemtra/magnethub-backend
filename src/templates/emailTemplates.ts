@@ -28,37 +28,37 @@ export function welcomeEmail(userEmail: string, userName: string, demoUrl: strin
   };
 }
 
-export function proMonthlyUpgradeEmail(userEmail: string, userName: string, nextBillingDate: Date, auditsUrl: string): SendEmailArgs {
+export function monthlyUpgradeEmail(userEmail: string, userName: string, nextBillingDate: Date, planName: string): SendEmailArgs {
   return {
     to: userEmail,
-    subject: "Welcome to MagnetHub Pro!",
+    subject: `Welcome to MagnetHub ${planName}!`,
     template: {
-      name: 'pro-monthly-upgrade',
+      name: 'monthly-upgrade',
       variables: {
         firstName: userName.split(' ')[0] || "let's get started",
         nextBillingDate: formatDate(nextBillingDate),
-        auditsUrl: auditsUrl,
+        planName: planName,
         logoUrl: config.logoUrl
       }
     }
   };
 }
 
-export function proAnnualUpgradeEmail(userEmail: string, userName: string, renewalDate: Date, auditsUrl: string): SendEmailArgs {
-  return {
-    to: userEmail,
-    subject: "Welcome to MagnetHub Pro!",
-    template: {
-      name: 'pro-annual-upgrade',
-      variables: {
-        firstName: userName.split(' ')[0] || "let's get started",
-        renewalDate: formatDate(renewalDate),
-        auditsUrl: auditsUrl,
-        logoUrl: config.logoUrl
-      }
-    }
-  };
-}
+// export function proAnnualUpgradeEmail(userEmail: string, userName: string, renewalDate: Date, auditsUrl: string): SendEmailArgs {
+//   return {
+//     to: userEmail,
+//     subject: "Welcome to MagnetHub Pro!",
+//     template: {
+//       name: 'pro-annual-upgrade',
+//       variables: {
+//         firstName: userName.split(' ')[0] || "let's get started",
+//         renewalDate: formatDate(renewalDate),
+//         auditsUrl: auditsUrl,
+//         logoUrl: config.logoUrl
+//       }
+//     }
+//   };
+// }
 
 export function cancellationEmail(userEmail: string, userName: string, periodEndDate: Date, billingUrl: string): SendEmailArgs {
   return {

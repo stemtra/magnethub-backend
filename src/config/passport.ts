@@ -130,6 +130,20 @@ if (config.google.clientId && config.google.clientSecret) {
           });
 
           logger.info('New user created via Google OAuth', { userId: user._id, email });
+
+          // Send welcome email for Google OAuth users
+          try {
+            const { sendEmail } = await import('../services/emailService.js');
+            const { welcomeEmail } = await import('../templates/emailTemplates.js');
+            const { config } = await import('./index.js');
+
+            const demoUrl = `${config.clientUrl}/dashboard`;
+            await sendEmail(welcomeEmail(user.email, user.name, demoUrl));
+            console.log('✅ DEBUG: Welcome email sent for Google OAuth user');
+          } catch (emailError) {
+            console.log('❌ DEBUG: Failed to send welcome email for Google OAuth user:', emailError);
+          }
+
           return done(null, user);
         } catch (error) {
           logger.error('Google strategy error', error);

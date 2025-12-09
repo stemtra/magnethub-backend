@@ -95,10 +95,30 @@ export async function register(
     }
 
     // Send welcome email
+    console.log('👤 DEBUG: About to send welcome email for user:', {
+      userId: user._id,
+      email: user.email,
+      name: user.name,
+      configClientUrl: config.clientUrl
+    });
+
     try {
       const demoUrl = `${config.clientUrl}/dashboard`;
-      await sendEmail(welcomeEmail(user.email, user.name, demoUrl));
+      console.log('📧 DEBUG: Welcome email demo URL:', demoUrl);
+
+      const emailArgs = welcomeEmail(user.email, user.name, demoUrl);
+      console.log('📧 DEBUG: Welcome email args:', emailArgs);
+
+      const emailResult = await sendEmail(emailArgs);
+      console.log('📧 DEBUG: Welcome email send result:', emailResult);
+
+      if (emailResult) {
+        console.log('✅ DEBUG: Welcome email sent successfully');
+      } else {
+        console.log('❌ DEBUG: Welcome email failed to send');
+      }
     } catch (emailError) {
+      console.log('❌ DEBUG: Exception while sending welcome email:', emailError);
       logger.error('Failed to send welcome email:', emailError as Error);
       // Don't fail registration if email fails
     }

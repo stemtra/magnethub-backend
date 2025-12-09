@@ -46,7 +46,7 @@ export async function sendDeliveryEmail(
     logger.info('Sending delivery email', { leadId, recipientEmail });
 
     await mg.messages.create(config.mailgun.domain, {
-      from: `MagnetHub <noreply@${config.mailgun.domain}>`,
+      from: config.mailgun.fromEmail,
       to: recipientEmail,
       subject,
       text: textBody,
@@ -73,25 +73,46 @@ export async function sendDeliveryEmail(
 // ============================================
 
 export async function sendEmail(args: SendEmailArgs): Promise<boolean> {
+  console.log('🔍 DEBUG: sendEmail called with args:', {
+    to: args.to,
+    template: args.template.name,
+    subject: args.subject,
+    variables: args.template.variables
+  });
+
+  console.log('🔍 DEBUG: Mailgun configuration check:', {
+    apiKeyExists: !!config.mailgun.apiKey,
+    domainExists: !!config.mailgun.domain,
+    mgClientExists: !!mg,
+    apiKeyLength: config.mailgun.apiKey ? config.mailgun.apiKey.length : 0
+  });
+
   if (!mg) {
+    console.log('❌ DEBUG: Mailgun not configured, skipping email send');
     logger.warn('Mailgun not configured, skipping email send');
     return false;
   }
 
   try {
+    console.log('📧 DEBUG: About to send template email to Mailgun');
     logger.info('Sending template email', {
       to: args.to,
       template: args.template.name,
       subject: args.subject
     });
 
-    await mg.messages.create(config.mailgun.domain, {
-      from: `MagnetHub <noreply@${config.mailgun.domain}>`,
+    const messageData = {
+      from: config.mailgun.fromEmail,
       to: args.to,
       subject: args.subject,
       template: args.template.name,
       'h:X-Mailgun-Variables': JSON.stringify(args.template.variables),
-    });
+    };
+
+    console.log('📧 DEBUG: Mailgun message data:', messageData);
+
+    const result = await mg.messages.create(config.mailgun.domain, messageData);
+    console.log('✅ DEBUG: Mailgun API response:', result);
 
     logger.info('Template email sent successfully', {
       to: args.to,
@@ -99,6 +120,7 @@ export async function sendEmail(args: SendEmailArgs): Promise<boolean> {
     });
     return true;
   } catch (error) {
+    console.log('❌ DEBUG: Failed to send template email - Error:', error);
     logger.error('Failed to send template email', {
       to: args.to,
       template: args.template.name,

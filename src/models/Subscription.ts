@@ -76,6 +76,11 @@ const subscriptionSchema = new Schema<ISubscription>(
     metadata: {
       source: String,
       cancelReason: String,
+      defaultPaymentMethodId: String,
+      cardBrand: String,
+      cardLast4: String,
+      cardExpMonth: Number,
+      cardExpYear: Number,
     },
   },
   {

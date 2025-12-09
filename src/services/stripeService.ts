@@ -284,7 +284,8 @@ class StripeService {
             price: newPriceId,
           },
         ],
-        proration_behavior: 'create_prorations',
+        // Bill the prorated difference immediately
+        proration_behavior: 'always_invoice',
         metadata: {
           ...subscription.metadata,
           plan: newPlan,

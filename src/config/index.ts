@@ -49,6 +49,7 @@ export const config = {
   mailgun: {
     apiKey: process.env.MAILGUN_API_KEY || '',
     domain: process.env.MAILGUN_DOMAIN || 'magnethubai.com',
+    fromEmail: process.env.MAILGUN_FROM_EMAIL || 'Stefano from MagnetHub <hello@magnethubai.com>',
   },
 
   // URLs

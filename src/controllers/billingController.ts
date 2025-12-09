@@ -58,7 +58,7 @@ export async function createCheckoutSession(
     }
 
     // Create checkout session
-    const successUrl = `${config.clientUrl}/settings?tab=billing&success=true&session_id={CHECKOUT_SESSION_ID}`;
+    const successUrl = `${config.clientUrl}/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${config.clientUrl}/settings?tab=billing&canceled=true`;
 
     const session = await stripeService.createCheckoutSession(
@@ -111,6 +111,13 @@ export async function getSubscriptionStatus(
           last4: pm.card.last4,
           expMonth: pm.card.exp_month,
           expYear: pm.card.exp_year,
+        };
+      } else if (activeSubscription.metadata?.cardBrand) {
+        paymentMethod = {
+          brand: activeSubscription.metadata.cardBrand,
+          last4: activeSubscription.metadata.cardLast4 || '',
+          expMonth: activeSubscription.metadata.cardExpMonth || 0,
+          expYear: activeSubscription.metadata.cardExpYear || 0,
         };
       }
     }
@@ -422,6 +429,10 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
         await handleInvoicePaymentFailed(event.data.object as any);
         break;
 
+      case 'customer.updated':
+        await handleCustomerUpdated(event.data.object as any);
+        break;
+
       default:
         logger.info(`Unhandled webhook event: ${event.type}`);
     }
@@ -455,6 +466,28 @@ async function handleCheckoutCompleted(session: any): Promise<void> {
 
       if (!subscriptionData) {
         logger.error(`Failed to retrieve subscription data: ${session.subscription}`);
+        return;
+      }
+
+      // Idempotency: if this Stripe subscription already exists, update it instead of creating a duplicate
+      const existingByStripeId = await Subscription.findOne({ stripeSubscriptionId: subscriptionData.subscriptionId });
+      if (existingByStripeId) {
+        console.log('🔍 DEBUG: Existing subscription found:', existingByStripeId);
+        existingByStripeId.plan = plan;
+        existingByStripeId.status = 'active';
+        existingByStripeId.stripePriceId = subscriptionData.priceId;
+        existingByStripeId.currentPeriodStart = subscriptionData.currentPeriodStart;
+        existingByStripeId.currentPeriodEnd = subscriptionData.currentPeriodEnd;
+        existingByStripeId.cancelAtPeriodEnd = false;
+        existingByStripeId.canceledAt = undefined;
+        existingByStripeId.endedAt = undefined;
+        await existingByStripeId.save();
+
+        await User.findByIdAndUpdate(userId, {
+          $set: { currentSubscriptionId: existingByStripeId._id },
+        });
+
+        logger.info(`Stripe subscription already existed; refreshed local record: ${subscriptionData.subscriptionId}`);
         return;
       }
 
@@ -513,6 +546,65 @@ async function handleCheckoutCompleted(session: any): Promise<void> {
     }
   } catch (error) {
     logger.error('Error handling checkout completed:', error as Error);
+  }
+}
+
+async function handleCustomerUpdated(customer: any): Promise<void> {
+  try {
+    const customerId = customer?.id;
+
+    if (!customerId) {
+      logger.warn('Customer updated webhook received without customer ID');
+      return;
+    }
+
+    // Find user either by stored customer ID or by metadata passed through Stripe
+    let user = await User.findOne({ stripeCustomerId: customerId });
+
+    if (!user && customer.metadata?.userId) {
+      user = await User.findById(customer.metadata.userId);
+
+      // Backfill stripeCustomerId if it was missing
+      if (user && !user.stripeCustomerId) {
+        user.stripeCustomerId = customerId;
+        await user.save();
+        logger.info(`Backfilled stripeCustomerId ${customerId} for user ${user._id}`);
+      }
+    }
+
+    if (!user) {
+      logger.warn(`No user found for customer.updated event: ${customerId}`);
+      return;
+    }
+
+    const paymentMethod = await stripeService.getCustomerPaymentMethod(customerId);
+
+    if (!paymentMethod?.card) {
+      logger.info(`Customer updated webhook processed without card data for customer ${customerId}`);
+      return;
+    }
+
+    const activeSubscription = await Subscription.findActiveByUserId(user._id.toString());
+
+    if (!activeSubscription) {
+      logger.warn(`No active subscription found for customer ${customerId} during customer.updated`);
+      return;
+    }
+
+    activeSubscription.metadata = {
+      ...activeSubscription.metadata,
+      defaultPaymentMethodId: paymentMethod.id,
+      cardBrand: paymentMethod.card.brand,
+      cardLast4: paymentMethod.card.last4,
+      cardExpMonth: paymentMethod.card.exp_month,
+      cardExpYear: paymentMethod.card.exp_year,
+    };
+
+    await activeSubscription.save();
+
+    logger.info(`Updated payment method metadata from customer.updated for user ${user._id}`);
+  } catch (error) {
+    logger.error('Error handling customer updated:', error as Error);
   }
 }
 

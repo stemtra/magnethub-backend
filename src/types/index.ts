@@ -36,6 +36,11 @@ export interface ISubscription extends Document {
   metadata?: {
     source?: string;
     cancelReason?: string;
+    defaultPaymentMethodId?: string;
+    cardBrand?: string;
+    cardLast4?: string;
+    cardExpMonth?: number;
+    cardExpYear?: number;
   };
   
   createdAt: Date;

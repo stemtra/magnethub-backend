@@ -56,8 +56,20 @@ app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 // Body Parsing
 // ============================================
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Skip JSON parsing for Stripe webhooks to preserve the raw body for signature verification
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/billing/webhook') {
+    return next();
+  }
+  return express.json({ limit: '10mb' })(req, res, next);
+});
+
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/billing/webhook') {
+    return next();
+  }
+  return express.urlencoded({ extended: true, limit: '10mb' })(req, res, next);
+});
 
 // ============================================
 // Logging
