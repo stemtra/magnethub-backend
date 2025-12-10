@@ -56,7 +56,7 @@ export const config = {
   clientUrl: process.env.CLIENT_URL || 'http://localhost:8080',
   landingUrl: process.env.LANDING_URL || 'http://localhost:3000',
   publicUrl: process.env.PUBLIC_URL || 'http://localhost:8081',
-  logoUrl: process.env.LOGO_URL || 'https://magnethubai.com/logo.png',
+  logoUrl: process.env.LOGO_URL || 'https://magnethubai.com/MagnetHub%20Isotype.png',
 
   // Slack
   slack: {
