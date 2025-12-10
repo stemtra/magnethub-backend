@@ -1,12 +1,7 @@
 import { readFile } from 'fs/promises';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { logger } from '../utils/logger.js';
 import type { IBrandSettings, ILandingPageCopy, LandingPageTemplate } from '../types/index.js';
-
-// @ts-ignore - import.meta.url is valid in ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 // Default brand settings
 export const DEFAULT_BRAND_SETTINGS: IBrandSettings = {
