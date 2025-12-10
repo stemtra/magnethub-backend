@@ -14,7 +14,7 @@ export async function connectDatabase(retries = MAX_RETRIES): Promise<void> {
       socketTimeoutMS: 45000,
     });
 
-    logger.info('✅ MongoDB connected successfully');
+    logger.info('✅ MongoDB connected successfully at ', config.mongoUri);
 
     // Handle connection events
     mongoose.connection.on('error', (err) => {
