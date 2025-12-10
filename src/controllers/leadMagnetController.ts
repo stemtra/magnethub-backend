@@ -6,7 +6,7 @@ import { Lead } from '../models/Lead.js';
 import { Brand } from '../models/Brand.js';
 import { runFullPipeline } from '../services/aiService.js';
 import { generatePdf } from '../services/pdfService.js';
-import { uploadPdf } from '../services/storageService.js';
+import { uploadPdf, getSignedPdfUrl } from '../services/storageService.js';
 import { renderLandingPage } from '../services/templateService.js';
 import { getRemainingGenerations } from '../middleware/rateLimit.js';
 import { billingService } from '../services/billingService.js';
@@ -15,6 +15,23 @@ import { isYouTubeUrl, extractYouTubeHandle, normalizeYouTubeUrl } from '../serv
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import type { AuthenticatedRequest, ApiResponse, ILeadMagnet, IBrandSettings, SourceType, IBrand } from '../types/index.js';
+
+async function attachSignedPdfUrl<T extends { pdfUrl?: string }>(
+  leadMagnet: T
+): Promise<T> {
+  if (!leadMagnet.pdfUrl) return leadMagnet;
+
+  try {
+    const signedUrl = await getSignedPdfUrl(leadMagnet.pdfUrl);
+    return { ...leadMagnet, pdfUrl: signedUrl };
+  } catch (error) {
+    logger.error('Failed to attach signed PDF URL; returning original.', {
+      error,
+      pdfUrl: leadMagnet.pdfUrl,
+    });
+    return leadMagnet;
+  }
+}
 
 // ============================================
 // Generate Lead Magnet
@@ -227,6 +244,8 @@ export async function generate(
       isPublished: true,
     });
 
+    const leadMagnetWithSignedUrl = await attachSignedPdfUrl(leadMagnet.toObject());
+
     // Record usage for billing
     await billingService.recordLeadMagnetUsage(req.user._id.toString());
 
@@ -240,7 +259,7 @@ export async function generate(
 
     res.status(201).json({
       success: true,
-      data: { leadMagnet },
+      data: { leadMagnet: leadMagnetWithSignedUrl },
     });
   } catch (error) {
     next(error);
@@ -265,11 +284,15 @@ export async function getAll(
       .sort({ createdAt: -1 })
       .populate('leadCount');
 
+    const leadMagnetsWithSignedUrls = await Promise.all(
+      leadMagnets.map(async (lm) => attachSignedPdfUrl(lm.toObject()))
+    );
+
     const remaining = await getRemainingGenerations(req.user._id.toString());
 
     res.json({
       success: true,
-      data: { leadMagnets, remaining },
+      data: { leadMagnets: leadMagnetsWithSignedUrls, remaining },
     });
   } catch (error) {
     next(error);
@@ -301,9 +324,11 @@ export async function getOne(
       throw AppError.notFound('Lead magnet not found');
     }
 
+    const leadMagnetWithSignedUrl = await attachSignedPdfUrl(leadMagnet.toObject());
+
     res.json({
       success: true,
-      data: { leadMagnet },
+      data: { leadMagnet: leadMagnetWithSignedUrl },
     });
   } catch (error) {
     next(error);

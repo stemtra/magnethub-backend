@@ -4,12 +4,9 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
-import path from 'path';
-
 import { config } from './config/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './utils/logger.js';
-import { getLocalPdfPath } from './services/storageService.js';
 
 // Import passport configuration (this sets up strategies)
 import passport from './config/passport.js';
@@ -151,34 +148,6 @@ app.get('/api', (_req, res) => {
       version: '1.0.0',
     },
   });
-});
-
-// ============================================
-// Serve Local PDFs (Development)
-// ============================================
-
-app.get('/api/pdfs/:filename', async (req, res) => {
-  const { filename } = req.params;
-  
-  // Security: prevent directory traversal
-  const safeFilename = path.basename(filename);
-  
-  const filePath = await getLocalPdfPath(safeFilename);
-  
-  if (!filePath) {
-    return res.status(404).json({
-      success: false,
-      error: 'PDF not found',
-      code: 'NOT_FOUND',
-    });
-  }
-
-  // Allow embedding in iframes from our client
-  res.removeHeader('X-Frame-Options');
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"`);
-  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  return res.sendFile(filePath);
 });
 
 // ============================================

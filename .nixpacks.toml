@@ -1,0 +1,8 @@
+[phases.setup]
+# Pin the runtime to Node 20 so globals like File are available (required by undici/OpenAI)
+nixPkgs = ["nodejs_20"]
+
+[variables]
+NODE_ENV = "production"
+NODE_VERSION = "20"
+
