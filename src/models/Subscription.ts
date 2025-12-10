@@ -81,6 +81,9 @@ const subscriptionSchema = new Schema<ISubscription>(
       cardLast4: String,
       cardExpMonth: Number,
       cardExpYear: Number,
+      paymentFailureReason: String,
+      paymentFailedAt: Date,
+      lastInvoiceId: String,
     },
   },
   {

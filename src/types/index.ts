@@ -41,6 +41,9 @@ export interface ISubscription extends Document {
     cardLast4?: string;
     cardExpMonth?: number;
     cardExpYear?: number;
+    paymentFailureReason?: string;
+    paymentFailedAt?: Date;
+    lastInvoiceId?: string;
   };
   
   createdAt: Date;

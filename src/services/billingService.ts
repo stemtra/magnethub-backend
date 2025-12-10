@@ -39,6 +39,14 @@ class BillingService {
       // Reset usage if needed
       await this.resetUsageIfNeeded(subscription);
 
+      const blockedStatuses = ['past_due', 'unpaid', 'incomplete', 'incomplete_expired'];
+      if (blockedStatuses.includes(subscription.status)) {
+        return {
+          allowed: false,
+          reason: 'Your subscription payment is past due. Please update your payment method.',
+        };
+      }
+
       if (subscription.canCreateLeadMagnet()) {
         return { allowed: true };
       }
@@ -78,7 +86,25 @@ class BillingService {
     isPaid: boolean;
   }> {
     try {
-      const subscription = await this.getOrCreateSubscription(userId);
+      // Prefer an active subscription; otherwise fall back to the most recent one
+      let subscription = await Subscription.findActiveByUserId(userId);
+
+      if (!subscription) {
+        subscription = await Subscription.findOne({ userId }).sort({ createdAt: -1 });
+      }
+
+      // If the user has never had a subscription, create a free one
+      if (!subscription) {
+        subscription = await Subscription.createFreeSubscription(userId);
+        await User.findByIdAndUpdate(userId, {
+          $set: { currentSubscriptionId: subscription._id },
+        });
+      }
+
+      // Update pointer to the latest subscription (even if not active) so UI can show correct state
+      await User.findByIdAndUpdate(userId, {
+        $set: { currentSubscriptionId: subscription._id },
+      });
 
       // Reset usage if needed
       await this.resetUsageIfNeeded(subscription);

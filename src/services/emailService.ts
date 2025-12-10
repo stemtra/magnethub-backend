@@ -138,3 +138,69 @@ export function isEmailConfigured(): boolean {
   return !!(config.mailgun.apiKey && config.mailgun.domain);
 }
 
+// ============================================
+// Payment Failure Email
+// ============================================
+
+export async function sendPaymentFailureEmail(params: {
+  to: string;
+  name: string;
+  plan: string;
+  amountDueCents?: number;
+  billingUrl: string;
+  errorMessage?: string;
+}): Promise<boolean> {
+  if (!mg) {
+    logger.warn('Mailgun not configured, skipping payment failure email');
+    return false;
+  }
+
+  const amount =
+    params.amountDueCents && params.amountDueCents > 0
+      ? `$${(params.amountDueCents / 100).toFixed(2)}`
+      : 'your subscription';
+
+  const subject = `[Action required]: update payment for your ${params.plan} plan`;
+
+  const textBody = [
+    `Hi ${params.name || 'there'},`,
+    '',
+    `We couldn't process the payment for your ${params.plan} plan.`,
+    params.errorMessage ? `Details: ${params.errorMessage}` : '',
+    '',
+    `Please update your payment method to keep your account active: ${params.billingUrl}`,
+    '',
+    'If you have any questions, just reply to this email.',
+    '',
+    '— The MagnetHub team',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const htmlBody = `
+    <p>Hi ${params.name || 'there'},</p>
+    <p>We couldn't process the payment for your <strong>${params.plan}</strong> plan.</p>
+    ${params.errorMessage ? `<p><strong>Details:</strong> ${params.errorMessage}</p>` : ''}
+    <p>Please update your payment method to keep your account active.</p>
+    <p><a href="${params.billingUrl}" target="_blank" rel="noopener noreferrer" style="background:#10B981;color:#fff;padding:12px 16px;border-radius:8px;text-decoration:none;display:inline-block;">Update payment</a></p>
+    <p style="color:#6b7280;font-size:14px;">If you have any questions, just reply to this email.</p>
+    <p>— The MagnetHub team</p>
+  `;
+
+  try {
+    await mg.messages.create(config.mailgun.domain, {
+      from: config.mailgun.fromEmail,
+      to: params.to,
+      subject,
+      text: textBody,
+      html: htmlBody,
+    });
+
+    logger.info('Payment failure email sent', { to: params.to, plan: params.plan });
+    return true;
+  } catch (error) {
+    logger.error('Failed to send payment failure email', { to: params.to, error });
+    return false;
+  }
+}
+

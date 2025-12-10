@@ -4,6 +4,7 @@ import { Subscription } from '../models/Subscription.js';
 import { stripeService } from '../services/stripeService.js';
 import { billingService } from '../services/billingService.js';
 import { SlackService } from '../services/slackService.js';
+import { sendPaymentFailureEmail } from '../services/emailService.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import { config, PlanType } from '../config/index.js';
@@ -99,12 +100,17 @@ export async function getSubscriptionStatus(
 
     const subscriptionStatus = await billingService.getUserSubscriptionStatus(req.user._id.toString());
 
-    // Get payment method if user has paid subscription
+    // Get payment method from the latest subscription with a customer ID (even if past_due/unpaid)
     let paymentMethod = null;
-    const activeSubscription = await Subscription.findActiveByUserId(req.user._id.toString());
+    const latestSubscription =
+      (await Subscription.findActiveByUserId(req.user._id.toString())) ||
+      (await Subscription.findOne({
+        userId: req.user._id,
+        stripeCustomerId: { $exists: true, $ne: null },
+      }).sort({ createdAt: -1 }));
 
-    if (activeSubscription?.stripeCustomerId && activeSubscription.isPaid()) {
-      const pm = await stripeService.getCustomerPaymentMethod(activeSubscription.stripeCustomerId);
+    if (latestSubscription?.stripeCustomerId) {
+      const pm = await stripeService.getCustomerPaymentMethod(latestSubscription.stripeCustomerId);
       if (pm?.card) {
         paymentMethod = {
           brand: pm.card.brand,
@@ -112,12 +118,12 @@ export async function getSubscriptionStatus(
           expMonth: pm.card.exp_month,
           expYear: pm.card.exp_year,
         };
-      } else if (activeSubscription.metadata?.cardBrand) {
+      } else if (latestSubscription.metadata?.cardBrand) {
         paymentMethod = {
-          brand: activeSubscription.metadata.cardBrand,
-          last4: activeSubscription.metadata.cardLast4 || '',
-          expMonth: activeSubscription.metadata.cardExpMonth || 0,
-          expYear: activeSubscription.metadata.cardExpYear || 0,
+          brand: latestSubscription.metadata.cardBrand,
+          last4: latestSubscription.metadata.cardLast4 || '',
+          expMonth: latestSubscription.metadata.cardExpMonth || 0,
+          expYear: latestSubscription.metadata.cardExpYear || 0,
         };
       }
     }
@@ -148,14 +154,20 @@ export async function createPortalSession(
       throw AppError.unauthorized();
     }
 
-    const activeSubscription = await Subscription.findActiveByUserId(req.user._id.toString());
+    // Prefer an active subscription, otherwise fallback to most recent paid/past_due subscription
+    let subscription =
+      (await Subscription.findActiveByUserId(req.user._id.toString())) ||
+      (await Subscription.findOne({
+        userId: req.user._id,
+        stripeCustomerId: { $exists: true, $ne: null },
+      }).sort({ createdAt: -1 }));
 
-    if (!activeSubscription?.stripeCustomerId) {
+    if (!subscription?.stripeCustomerId) {
       throw AppError.notFound('No billing information found');
     }
 
     const returnUrl = `${config.clientUrl}/settings?tab=billing`;
-    const session = await stripeService.createPortalSession(activeSubscription.stripeCustomerId, returnUrl);
+    const session = await stripeService.createPortalSession(subscription.stripeCustomerId, returnUrl);
 
     res.json({
       success: true,
@@ -720,16 +732,42 @@ async function handleInvoicePaymentFailed(invoice: any): Promise<void> {
   try {
     logger.warn(`Invoice payment failed: ${invoice.id}, amount: ${invoice.amount_due / 100}`);
 
+    // Update subscription status/metadata locally
+    try {
+      const subscription = await Subscription.findOne({ stripeSubscriptionId: invoice.subscription });
+      if (subscription) {
+        subscription.status = 'past_due';
+        subscription.metadata = {
+          ...subscription.metadata,
+          paymentFailureReason: invoice.last_payment_error?.message,
+          paymentFailedAt: new Date(),
+          lastInvoiceId: invoice.id,
+        };
+        await subscription.save();
+      }
+    } catch (updateError) {
+      logger.error('Failed to persist payment failure on subscription', updateError as Error);
+    }
+
     // Send Slack notification for payment failure
     try {
       const user = await User.findOne({ stripeCustomerId: invoice.customer });
       if (user) {
-        await SlackService.sendPaymentFailedNotification(
-          user.email,
-          user.name,
-          invoice.amount_due,
-          invoice.last_payment_error?.message
-        );
+        const amountDue = invoice.amount_due;
+        const reason = invoice.last_payment_error?.message;
+
+        await SlackService.sendPaymentFailedNotification(user.email, user.name, amountDue, reason);
+
+        // Notify the customer by email
+        const billingUrl = `${config.clientUrl}/settings?tab=billing`;
+        await sendPaymentFailureEmail({
+          to: user.email,
+          name: user.name,
+          plan: 'your subscription',
+          amountDueCents: amountDue,
+          billingUrl,
+          errorMessage: reason,
+        });
       }
     } catch (slackError) {
       logger.error('Failed to send Slack notification for payment failure:', slackError as Error);

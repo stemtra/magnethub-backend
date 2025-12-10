@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { validateBody, validateParams } from '../middleware/validate.js';
 import { isAuthenticated } from '../middleware/auth.js';
-import { checkGenerationLimit } from '../middleware/rateLimit.js';
+import { checkGenerationLimit, requireBillingHealthy } from '../middleware/rateLimit.js';
 import * as leadMagnetController from '../controllers/leadMagnetController.js';
 
 const router = Router();
@@ -67,12 +67,7 @@ router.use(isAuthenticated);
  * POST /api/lead-magnets/generate
  * Generate a new lead magnet
  */
-router.post(
-  '/generate',
-  checkGenerationLimit,
-  validateBody(generateSchema),
-  leadMagnetController.generate
-);
+router.post('/generate', requireBillingHealthy, checkGenerationLimit, validateBody(generateSchema), leadMagnetController.generate);
 
 /**
  * GET /api/lead-magnets
@@ -90,7 +85,7 @@ router.get('/leads', leadMagnetController.getAllLeads);
  * GET /api/lead-magnets/leads/export
  * Export all leads as CSV
  */
-router.get('/leads/export', leadMagnetController.exportAllLeadsCsv);
+router.get('/leads/export', requireBillingHealthy, leadMagnetController.exportAllLeadsCsv);
 
 /**
  * GET /api/lead-magnets/:id
@@ -114,13 +109,13 @@ router.get('/:id/leads', validateParams(idParamSchema), leadMagnetController.get
  * GET /api/lead-magnets/:id/leads/export
  * Export leads as CSV
  */
-router.get('/:id/leads/export', validateParams(idParamSchema), leadMagnetController.exportLeadsCsv);
+router.get('/:id/leads/export', requireBillingHealthy, validateParams(idParamSchema), leadMagnetController.exportLeadsCsv);
 
 /**
  * POST /api/lead-magnets/:id/regenerate-pdf
  * Regenerate the PDF for a lead magnet
  */
-router.post('/:id/regenerate-pdf', validateParams(idParamSchema), leadMagnetController.regeneratePdf);
+router.post('/:id/regenerate-pdf', requireBillingHealthy, validateParams(idParamSchema), leadMagnetController.regeneratePdf);
 
 export default router;
 
