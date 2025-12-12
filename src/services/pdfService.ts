@@ -92,9 +92,14 @@ function generatePdfHtml(
   const fontFamilyEncoded = encodeURIComponent(fontFamily.replace(/ /g, '+'));
   const fontUrl = `https://fonts.googleapis.com/css2?family=${fontFamilyEncoded}:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap`;
 
-  const sectionsHtml = content.sections
-    .map((section, index) => renderSection(section, index + 1, type, brand, isDark))
-    .join('');
+  const isCompactType = ['checklist', 'cheatsheet', 'mistakes', 'swipefile'].includes(type);
+  const sectionsHtml = isCompactType
+    ? content.sections
+        .map((section, index) => renderFlowSection(section, index + 1, type))
+        .join('')
+    : content.sections
+        .map((section, index) => renderSection(section, index + 1, type))
+        .join('');
 
   // Logo HTML if available
   const logoHtml = brand.logoUrl 
@@ -228,6 +233,67 @@ function generatePdfHtml(
 
     .content-page:last-of-type {
       page-break-after: auto;
+    }
+
+    /* ================================
+       COMPACT FLOW CONTENT
+       (for checklist/cheatsheet/mistakes/swipefile)
+    ================================ */
+    .content-flow {
+      padding: 46px 54px;
+      background: var(--color-background);
+    }
+
+    /* Cheatsheet: maximize density (often 1-2 pages) */
+    .content-flow.cheatsheet {
+      padding: 38px 42px;
+      font-size: 10pt;
+      line-height: 1.45;
+      column-count: 2;
+      column-gap: 26px;
+    }
+
+    .content-flow.cheatsheet .content-section {
+      margin-bottom: 22px;
+    }
+
+    .content-flow.cheatsheet .content-section-title {
+      font-size: 14pt;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+    }
+
+    .content-flow.cheatsheet .paragraph {
+      margin-bottom: 10px;
+      text-align: left;
+      hyphens: none;
+    }
+
+    .content-flow.cheatsheet .bullet-item,
+    .content-flow.cheatsheet .checkbox-item,
+    .content-flow.cheatsheet .numbered-item {
+      margin-bottom: 8px;
+    }
+
+    .content-section {
+      margin-bottom: 34px;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    .content-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .content-section-title {
+      font-family: var(--font-heading);
+      font-size: 18pt;
+      font-weight: 600;
+      color: var(--color-text);
+      line-height: 1.3;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--color-border);
     }
 
     /* Section Header */
@@ -387,6 +453,7 @@ function generatePdfHtml(
         ? `linear-gradient(180deg, ${surfaceColor} 0%, ${brand.backgroundColor} 100%)`
         : `linear-gradient(180deg, ${surfaceColor} 0%, ${brand.backgroundColor} 100%)`
       };
+      page-break-before: always;
     }
 
     .cta-logo {
@@ -451,7 +518,7 @@ function generatePdfHtml(
   </div>
 
   <!-- CONTENT SECTIONS -->
-  ${sectionsHtml}
+  ${isCompactType ? `<div class="content-flow ${type === 'cheatsheet' ? 'cheatsheet' : ''}">${sectionsHtml}</div>` : sectionsHtml}
 
   <!-- CTA PAGE -->
   <div class="cta-page">
@@ -467,11 +534,9 @@ function generatePdfHtml(
 function renderSection(
   section: { title: string; content: string },
   sectionNum: number,
-  type: LeadMagnetType,
-  brand: IBrandSettings,
-  isDark: boolean
+  _type: LeadMagnetType
 ): string {
-  const contentHtml = parseAndRenderContent(section.content, type);
+  const contentHtml = parseAndRenderContent(section.content, _type);
 
   return `
   <div class="content-page">
@@ -484,6 +549,21 @@ function renderSection(
     </div>
     <div class="page-number">${sectionNum}</div>
   </div>`;
+}
+
+function renderFlowSection(
+  section: { title: string; content: string },
+  _sectionNum: number,
+  type: LeadMagnetType
+): string {
+  const contentHtml = parseAndRenderContent(section.content, type);
+  return `
+  <section class="content-section">
+    <h2 class="content-section-title">${escapeHtml(section.title)}</h2>
+    <div class="section-content">
+      ${contentHtml}
+    </div>
+  </section>`;
 }
 
 function parseAndRenderContent(content: string, type: LeadMagnetType): string {

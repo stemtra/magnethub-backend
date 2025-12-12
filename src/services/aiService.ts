@@ -34,7 +34,8 @@ const RETRY_DELAY = 1000;
 async function callOpenAI<T>(
   systemPrompt: string,
   userPrompt: string,
-  retries = MAX_RETRIES
+  retries = MAX_RETRIES,
+  options?: { maxOutputTokens?: number }
 ): Promise<T> {
   try {
     // Combine system and user prompts for the Responses API
@@ -43,6 +44,7 @@ async function callOpenAI<T>(
     const response = await openai.responses.create({
       model: 'gpt-5.1',
       input,
+      ...(options?.maxOutputTokens ? { max_output_tokens: options.maxOutputTokens } : {}),
       text: {
         format: {
           type: 'json_object',
@@ -55,15 +57,52 @@ async function callOpenAI<T>(
       throw new Error('Empty response from OpenAI');
     }
 
-    return JSON.parse(content) as T;
+    // Be tolerant of occasional stray text around the JSON object.
+    const firstBrace = content.indexOf('{');
+    const lastBrace = content.lastIndexOf('}');
+    const jsonCandidate =
+      firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace
+        ? content.slice(firstBrace, lastBrace + 1)
+        : content;
+
+    try {
+      return JSON.parse(jsonCandidate) as T;
+    } catch (parseError) {
+      // If output was truncated due to token limits, retry with a slightly higher cap.
+      const looksTruncated =
+        typeof content === 'string' &&
+        content.includes('{') &&
+        !content.trim().endsWith('}');
+
+      if (looksTruncated && retries > 0 && options?.maxOutputTokens) {
+        const bumped = Math.min(Math.round(options.maxOutputTokens * 1.4 + 200), 8000);
+        logger.warn('OpenAI returned truncated JSON; retrying with higher max_output_tokens', {
+          from: options.maxOutputTokens,
+          to: bumped,
+          retriesLeft: retries - 1,
+        });
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+        return callOpenAI<T>(systemPrompt, userPrompt, retries - 1, { ...options, maxOutputTokens: bumped });
+      }
+
+      logger.warn('Failed to parse OpenAI JSON output', {
+        message: parseError instanceof Error ? parseError.message : String(parseError),
+        // keep logs small; enough to diagnose
+        preview: content.slice(0, 500),
+      });
+      throw parseError;
+    }
   } catch (error) {
     if (retries > 0) {
       logger.warn('OpenAI call failed, retrying...', { retriesLeft: retries - 1 });
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
-      return callOpenAI<T>(systemPrompt, userPrompt, retries - 1);
+      return callOpenAI<T>(systemPrompt, userPrompt, retries - 1, options);
     }
 
-    logger.error('OpenAI call failed after retries', error);
+    logger.error('OpenAI call failed after retries', {
+      message: error instanceof Error ? error.message : String(error),
+      error,
+    });
     throw AppError.internal('AI service temporarily unavailable. Please try again.');
   }
 }
@@ -236,13 +275,13 @@ export async function generateOutline(
   logger.info('AI Call #2: Outline Generation', { type, sourceType });
 
   const typeDescriptions: Record<LeadMagnetType, string> = {
-    guide: 'A comprehensive guide with 5-7 sections, providing in-depth knowledge and actionable advice.',
-    checklist: 'A practical checklist with 10-15 items, easy to follow and implement immediately.',
-    mistakes: 'An educational piece highlighting 5-7 common mistakes and how to avoid/fix them.',
-    blueprint: 'A step-by-step framework or blueprint with 4-6 phases/stages for achieving a specific outcome.',
-    swipefile: 'A collection of 8-12 ready-to-use templates with fill-in-the-blank sections. Each template should be practical and immediately usable.',
-    cheatsheet: 'A dense, single-page quick reference with formulas, shortcuts, key concepts, and essential information organized in scannable sections.',
-    casestudy: 'A compelling success story following the Challenge → Solution → Results format, with specific metrics and a clear transformation narrative.',
+    guide: 'A comprehensive guide with 5-7 sections. Each section should be distinct and substantive.',
+    checklist: 'A practical checklist with 10-18 checklist items grouped into 2-4 short sections (plus an optional 1 short intro). Keep it scannable.',
+    mistakes: 'An educational piece highlighting 5-7 common mistakes. Structure the outline as: 1 short intro + 5-7 mistake sections (one mistake per section).',
+    blueprint: 'A step-by-step framework with 4-6 phases/stages for achieving a specific outcome.',
+    swipefile: 'A collection of 8-12 ready-to-use templates. Structure the outline so templates can be grouped logically (e.g., 2-4 sections, each containing multiple templates) OR one template per section if needed.',
+    cheatsheet: 'A dense 1-2 page quick reference organized into 4-6 categories (sections). Prioritize scannability and information density.',
+    casestudy: 'A compelling success story following the Challenge → Solution → Results format, with specific metrics and clear takeaways (typically 4-8 pages).',
   };
 
   const isCreator = sourceType === 'instagram' || sourceType === 'youtube';
@@ -307,13 +346,26 @@ export async function generateContent(
   };
 
   const lengthGuides: Record<LeadMagnetType, string> = {
-    guide: 'Write comprehensive content with 300-500 words per section (10-15 pages total).',
-    checklist: 'Write concise bullet points with brief explanations (1-3 pages total).',
-    mistakes: 'Write 200-300 words per mistake, including the problem and solution (3-6 pages total).',
-    blueprint: 'Write clear step-by-step instructions with 200-400 words per step (5-8 pages total).',
-    swipefile: 'Write 8-12 complete templates, each with a title, context for when to use it, and the full copy-paste template with [BRACKETED] placeholders for customization (5-10 pages total).',
-    cheatsheet: 'Write dense, scannable content organized into 4-6 categories. Use bullet points, short phrases, formulas, and quick tips. Prioritize information density over explanation (1-2 pages total).',
-    casestudy: 'Write a narrative case study with: Background (who the client was), Challenge (the problem they faced), Solution (what was implemented), Results (specific metrics and outcomes), and Key Takeaways (3-5 pages total).',
+    guide: 'Target 8-12 pages total. Write 180-280 words per section. Keep it tight, actionable, and avoid filler.',
+    checklist: 'Target 2-4 pages total. Prefer bullets. 10-18 checklist items total. Each item should be 1-2 lines, optionally with a short parenthetical hint.',
+    mistakes: 'Target 3-6 pages total. 5-7 mistakes total. Each mistake should be ~120-180 words, and include 2-4 bullet fixes.',
+    blueprint: 'Target 4-7 pages total. 4-6 steps/phases. Each step should be ~150-220 words + 2-4 bullets.',
+    swipefile: 'Target 6-10 pages total. 8-12 templates. Keep each template concise (60-120 words) and highly copy-pasteable. Avoid long explanations.',
+    cheatsheet: 'Target 1-2 pages total. Extremely dense/scannable. Minimal prose; mostly bullets, short phrases, quick tips.',
+    casestudy: 'Target 4-8 pages total. 800-1400 words total, with short sections and concrete metrics. Avoid long narrative tangents.',
+  };
+
+  // Hard cap output to prevent "cheatsheet" (and others) from becoming long PDFs.
+  // These are intentionally conservative; the PDF renderer will format and may add pages.
+  const maxOutputTokensByType: Record<LeadMagnetType, number> = {
+    // 1200 was occasionally too tight for valid JSON + multiple sections; keep it capped but safer.
+    cheatsheet: 2000,
+    checklist: 1800,
+    mistakes: 2500,
+    blueprint: 3000,
+    swipefile: 4200,
+    casestudy: 5200,
+    guide: 7000,
   };
 
   const isCreator = sourceType === 'instagram' || sourceType === 'youtube';
@@ -335,10 +387,14 @@ Avoid:
 - Content that feels disconnected from their ${platformName} personality`
     : '';
 
+  const cheatsheetRules = type === 'cheatsheet'
+    ? `\n\nCHEAT SHEET STRICT RULES:\n- NO long paragraphs. Prefer bullets.\n- Max 4-6 categories (sections).\n- Per category: 6-10 bullets max.\n- Each bullet: 6-14 words max.\n- Use compact formatting. Avoid storytelling.\n- Do NOT add extra sections beyond the outline.\n- Keep total output concise.`
+    : '';
+
   const systemPrompt = `You are an expert content writer creating a ${type} lead magnet.
 
 Tone: ${toneDescriptions[tone]}
-Length: ${lengthGuides[type]}${creatorContext}
+Length: ${lengthGuides[type]}${creatorContext}${cheatsheetRules}
 
 Return a JSON object:
 {
@@ -368,7 +424,9 @@ ${contextLabel}:
 
 Write compelling, actionable content for each section.`;
 
-  return callOpenAI<ILeadMagnetContent>(systemPrompt, userPrompt);
+  return callOpenAI<ILeadMagnetContent>(systemPrompt, userPrompt, MAX_RETRIES, {
+    maxOutputTokens: maxOutputTokensByType[type],
+  });
 }
 
 // ============================================
@@ -577,6 +635,17 @@ export interface PipelineResult {
   sourceDescription?: string; // Description from scraped source (for caching)
 }
 
+export interface ContentPipelineResult {
+  meta: IBusinessMeta;
+  outline: IOutline;
+  content: ILeadMagnetContent;
+  extractedBrand: IBrandSettings;
+  sourceType: SourceType;
+  instagramProfilePic?: string;
+  youtubeThumbnail?: string;
+  sourceDescription?: string;
+}
+
 export interface CachedSourceData {
   description: string;
   logoUrl?: string;
@@ -593,10 +662,10 @@ export interface PipelineOptions {
   cachedData?: CachedSourceData; // Skip scraping if we have cached brand data
 }
 
-export async function runFullPipeline(
+export async function runPipelineToContent(
   url: string,
   options: PipelineOptions
-): Promise<PipelineResult> {
+): Promise<ContentPipelineResult> {
   // Auto-detect source type if not provided
   let sourceType: SourceType = options.sourceType || 'website';
   if (!options.sourceType) {
@@ -606,11 +675,11 @@ export async function runFullPipeline(
       sourceType = 'instagram';
     }
   }
-  
+
   const hasCachedData = options.cachedData?.description;
-  logger.info('Starting AI pipeline', { 
-    url, 
-    type: options.type, 
+  logger.info('Starting AI pipeline (phase 1: to content)', {
+    url,
+    type: options.type,
     sourceType,
     usingCache: !!hasCachedData,
   });
@@ -634,14 +703,12 @@ export async function runFullPipeline(
   // Use cached data if available (skip scraping to save resources)
   if (hasCachedData && options.cachedData) {
     logger.info('Using cached brand data - skipping web scraping');
-    
-    // Use cached brand settings or defaults
+
     extractedBrand = options.cachedData.brandSettings || defaultSocialBrand;
     instagramProfilePic = sourceType === 'instagram' ? options.cachedData.logoUrl : undefined;
     youtubeThumbnail = sourceType === 'youtube' ? options.cachedData.logoUrl : undefined;
     sourceDescription = options.cachedData.description;
-    
-    // Still need to analyze content - use cached description to create business meta
+
     meta = await analyzeFromCachedDescription(
       options.cachedData.description,
       sourceType,
@@ -649,12 +716,11 @@ export async function runFullPipeline(
     );
     logger.info('Call #1 complete: Analyzed from cached description');
   } else if (sourceType === 'youtube') {
-    // YouTube flow: scrape channel, use default branding
     const result = await analyzeYouTubeChannel(url, options.audience);
     meta = result.meta;
     youtubeThumbnail = result.channel.thumbnailUrl;
     sourceDescription = result.channel.description;
-    logger.info('Call #1 complete: YouTube channel analyzed', { 
+    logger.info('Call #1 complete: YouTube channel analyzed', {
       hasThumbnail: !!youtubeThumbnail,
       hasDescription: !!sourceDescription,
     });
@@ -662,12 +728,11 @@ export async function runFullPipeline(
     extractedBrand = defaultSocialBrand;
     logger.info('Using default branding for YouTube channel');
   } else if (sourceType === 'instagram') {
-    // Instagram flow: scrape profile, use default branding
     const result = await analyzeInstagramProfile(url, options.audience);
     meta = result.meta;
     instagramProfilePic = result.profile.profilePicUrl;
     sourceDescription = result.profile.bio;
-    logger.info('Call #1 complete: Instagram profile analyzed', { 
+    logger.info('Call #1 complete: Instagram profile analyzed', {
       hasProfilePic: !!instagramProfilePic,
       hasDescription: !!sourceDescription,
     });
@@ -675,46 +740,68 @@ export async function runFullPipeline(
     extractedBrand = defaultSocialBrand;
     logger.info('Using default branding for Instagram profile');
   } else {
-    // Website flow: scrape website, extract brand
     const brandPromise = extractBrandFromWebsite(url);
     meta = await analyzeWebsite(url, options.audience);
-    sourceDescription = meta.business_summary; // Use the analyzed summary
+    sourceDescription = meta.business_summary;
     logger.info('Call #1 complete: Website analyzed');
-    
+
     extractedBrand = await brandPromise;
     logger.info('Brand extraction complete', { extractedBrand });
   }
 
-  // Call #2: Outline Generation (source-aware)
   const outline = await generateOutline(meta, options.type, sourceType);
   logger.info('Call #2 complete: Outline generated');
 
-  // Call #3: Content Generation (source-aware)
   const content = await generateContent(meta, outline, options.type, options.tone, sourceType);
   logger.info('Call #3 complete: Content generated');
 
-  // Call #4: Landing Page Copy (source-aware)
-  const landingPageCopy = await generateLandingPageCopy(meta, content, sourceType);
-  logger.info('Call #4 complete: Landing page copy generated');
-
-  // Call #5: Email Sequence (source-aware)
-  const pdfUrl = options.pdfUrl || `{{PDF_URL}}`;
-  const emails = await generateEmailSequence(meta, content, pdfUrl, options.tone, options.goal, sourceType);
-  logger.info('Call #5 complete: Email sequence generated');
-
-  logger.info('AI pipeline complete', { sourceType });
+  logger.info('AI pipeline phase 1 complete', { sourceType });
 
   return {
     meta,
     outline,
     content,
-    landingPageCopy,
-    emails,
     extractedBrand,
     sourceType,
     instagramProfilePic,
     youtubeThumbnail,
     sourceDescription,
+  };
+}
+
+export async function generateAssetsForLeadMagnet(
+  meta: IBusinessMeta,
+  content: ILeadMagnetContent,
+  options: { pdfUrl: string; tone: LeadMagnetTone; goal: LeadMagnetGoal; sourceType: SourceType }
+): Promise<{ landingPageCopy: ILandingPageCopy; emails: IEmailSequence }> {
+  logger.info('Starting AI pipeline (phase 2: assets)', { sourceType: options.sourceType });
+
+  const [landingPageCopy, emails] = await Promise.all([
+    generateLandingPageCopy(meta, content, options.sourceType),
+    generateEmailSequence(meta, content, options.pdfUrl, options.tone, options.goal, options.sourceType),
+  ]);
+
+  logger.info('AI pipeline phase 2 complete', { sourceType: options.sourceType });
+  return { landingPageCopy, emails };
+}
+
+export async function runFullPipeline(
+  url: string,
+  options: PipelineOptions
+): Promise<PipelineResult> {
+  const phase1 = await runPipelineToContent(url, options);
+  const pdfUrl = options.pdfUrl || `{{PDF_URL}}`;
+  const { landingPageCopy, emails } = await generateAssetsForLeadMagnet(phase1.meta, phase1.content, {
+    pdfUrl,
+    tone: options.tone,
+    goal: options.goal,
+    sourceType: phase1.sourceType,
+  });
+
+  return {
+    ...phase1,
+    landingPageCopy,
+    emails,
   };
 }
 
