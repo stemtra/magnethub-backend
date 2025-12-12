@@ -9,6 +9,7 @@ import { getSignedPdfUrl } from '../services/storageService.js';
 import { renderLandingPage, DEFAULT_BRAND_SETTINGS } from '../services/templateService.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
+import { Brand } from '../models/Brand.js';
 import type { ApiResponse, IEmail, ILandingPageCopy } from '../types/index.js';
 
 // ============================================
@@ -328,6 +329,15 @@ export async function thankYouPage(
 
     const title = leadMagnet?.title || 'Your Download';
 
+    // Get brand logo for favicon
+    let faviconHtml = '';
+    if (leadMagnet?.brandId) {
+      const brand = await Brand.findById(leadMagnet.brandId);
+      if (brand?.settings?.logoUrl) {
+        faviconHtml = `  <link rel="icon" type="image/png" href="${brand.settings.logoUrl}" />`;
+      }
+    }
+
     const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -335,6 +345,7 @@ export async function thankYouPage(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Thank You - ${title}</title>
+${faviconHtml}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
