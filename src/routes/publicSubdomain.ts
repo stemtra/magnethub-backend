@@ -10,14 +10,18 @@ const router: Router = Router();
 router.use(express.urlencoded({ extended: true }));
 
 function extractUsernameFromHostname(hostname: string): string | null {
-  const rawRoot = (config.publicRootDomain || '').toLowerCase();
+  const rawRoot = String(config.publicRootDomain || '')
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\.+$/, '')
+    .toLowerCase();
   if (!rawRoot) return null;
   // Allow PUBLIC_ROOT_DOMAIN to be set either as a bare domain ("magnethubai.com")
   // or a full URL ("https://magnethubai.com").
   const root = (() => {
     try {
       if (rawRoot.startsWith('http://') || rawRoot.startsWith('https://')) {
-        return new URL(rawRoot).hostname.toLowerCase();
+        return new URL(rawRoot).hostname.replace(/\.+$/, '').toLowerCase();
       }
     } catch {
       // ignore
@@ -25,7 +29,10 @@ function extractUsernameFromHostname(hostname: string): string | null {
     return rawRoot;
   })();
 
-  const host = (hostname || '').toLowerCase();
+  const host = String(hostname || '')
+    .trim()
+    .replace(/\.+$/, '')
+    .toLowerCase();
   if (!host || host === root) return null;
   if (!host.endsWith(`.${root}`)) return null;
 
