@@ -3,10 +3,10 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import session from 'express-session';
-import MongoStore from 'connect-mongo';
 import { config } from './config/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './utils/logger.js';
+import { getSessionConfig, getCorsConfig } from './utils/config.js';
 
 // Import passport configuration (this sets up strategies)
 import passport from './config/passport.js';
@@ -26,6 +26,11 @@ const app: express.Application = express();
 // Security Middleware
 // ============================================
 
+// Behind reverse proxies (e.g., Vercel/Load Balancers) we must trust the
+// first proxy so req.secure reflects the original HTTPS request. Without this,
+// secure cookies would not be set and sessions would fail.
+app.set('trust proxy', 1);
+
 app.use(helmet({
   contentSecurityPolicy: config.isProd ? undefined : false, // Disable in dev for easier debugging
   crossOriginEmbedderPolicy: false, // Allow embedding PDFs
@@ -36,24 +41,7 @@ app.use(helmet({
 // CORS
 // ============================================
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // OAuth redirects and direct browser navigations often do not include an Origin header.
-    // We allow those requests, while still enforcing the allowlist for cross-origin XHR/fetch.
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    if (config.allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(new Error(`Not allowed by CORS: ${origin}`));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+app.use(cors(getCorsConfig()));
 
 // ============================================
 // Stripe Webhook (needs raw body - BEFORE json middleware)
@@ -98,22 +86,7 @@ if (config.isDev) {
 // Session
 // ============================================
 
-app.use(session({
-  secret: config.sessionSecret,
-  resave: false,
-  saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: config.mongoUri,
-    ttl: 14 * 24 * 60 * 60, // 14 days
-    autoRemove: 'native',
-  }),
-  cookie: {
-    secure: config.isProd,
-    httpOnly: true,
-    maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days
-    sameSite: config.isProd ? 'strict' : 'lax',
-  },
-}));
+app.use(session(getSessionConfig()));
 
 // ============================================
 // Passport
