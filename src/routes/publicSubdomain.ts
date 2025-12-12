@@ -52,15 +52,25 @@ function extractUsernameFromHostname(hostname: string): string | null {
 }
 
 function getOriginalHostname(req: Request): string {
-  const xfHost = req.headers['x-forwarded-host'];
-  const hostHeader =
-    typeof xfHost === 'string'
-      ? xfHost
-      : Array.isArray(xfHost)
-        ? xfHost[0]
-        : req.headers.host;
+  const pickFirst = (value: string | string[] | undefined): string => {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) return value[0] || '';
+    return '';
+  };
 
-  const host = (hostHeader || '').split(',')[0]?.trim() || '';
+  // 1) Common proxy headers
+  const xfHost = pickFirst(req.headers['x-forwarded-host']);
+  const xoHost = pickFirst(req.headers['x-original-host']);
+
+  // 2) RFC 7239 Forwarded: host=example.com;proto=https
+  const forwarded = pickFirst(req.headers['forwarded']);
+  const forwardedHostMatch = forwarded.match(/(?:^|;|\s)host="?([^;," ]+)"?/i);
+  const fHost = forwardedHostMatch?.[1] || '';
+
+  // 3) Fallback to Host
+  const hostHeader = xfHost || xoHost || fHost || (req.headers.host || '');
+
+  const host = String(hostHeader).split(',')[0]?.trim() || '';
   // Strip port if present (e.g. "example.com:443")
   return host.replace(/:\d+$/, '');
 }
