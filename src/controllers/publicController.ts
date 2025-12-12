@@ -5,6 +5,7 @@ import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
 import { PageView } from '../models/PageView.js';
 import { sendDeliveryEmail } from '../services/emailService.js';
+import { getSignedPdfUrl } from '../services/storageService.js';
 import { renderLandingPage, DEFAULT_BRAND_SETTINGS } from '../services/templateService.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
@@ -262,14 +263,25 @@ export async function subscribe(
     // Send delivery email asynchronously
     if (leadMagnet.emailsJson?.emails?.[0]) {
       const deliveryEmail: IEmail = leadMagnet.emailsJson.emails[0];
+
+      // The stored PDF URL may point at the R2 API hostname (requires auth).
+      // For emails, always convert it to a time-limited signed URL so the recipient can open it.
+      const storedPdfUrl = typeof leadMagnet.pdfUrl === 'string' ? leadMagnet.pdfUrl : '';
+      const signedPdfUrl = storedPdfUrl ? await getSignedPdfUrl(storedPdfUrl, 60 * 60 * 24 * 7) : '';
+      const bodyHtml = signedPdfUrl
+        ? deliveryEmail.body_html.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl)
+        : deliveryEmail.body_html;
+      const bodyText = signedPdfUrl
+        ? deliveryEmail.body_text.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl)
+        : deliveryEmail.body_text;
       
       // Don't await - send in background
       sendDeliveryEmail(
         lead._id.toString(),
         email.toLowerCase(),
         deliveryEmail.subject,
-        deliveryEmail.body_html,
-        deliveryEmail.body_text
+        bodyHtml,
+        bodyText
       ).catch((error: unknown) => {
         logger.error('Failed to send delivery email', error);
       });
@@ -698,12 +710,22 @@ export async function subscribeApi(
 
       if (leadMagnet.emailsJson?.emails?.[0]) {
         const deliveryEmail: IEmail = leadMagnet.emailsJson.emails[0];
+
+        const storedPdfUrl = typeof leadMagnet.pdfUrl === 'string' ? leadMagnet.pdfUrl : '';
+        const signedPdfUrl = storedPdfUrl ? await getSignedPdfUrl(storedPdfUrl, 60 * 60 * 24 * 7) : '';
+        const bodyHtml = signedPdfUrl
+          ? deliveryEmail.body_html.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl)
+          : deliveryEmail.body_html;
+        const bodyText = signedPdfUrl
+          ? deliveryEmail.body_text.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl)
+          : deliveryEmail.body_text;
+
         sendDeliveryEmail(
           lead._id.toString(),
           email.toLowerCase(),
           deliveryEmail.subject,
-          deliveryEmail.body_html,
-          deliveryEmail.body_text
+          bodyHtml,
+          bodyText
         ).catch((error: unknown) => {
           logger.error('Failed to send delivery email', error);
         });
