@@ -22,7 +22,10 @@ export function welcomeEmail(userEmail: string, userName: string, demoUrl: strin
       variables: {
         firstName: userName.split(' ')[0] || "let's get started",
         demoUrl: demoUrl,
-        logoUrl: config.logoUrl
+        // Back-compat: some Mailgun templates still reference `logoUrl`.
+        // We want the isotype to render reliably in email clients.
+        logoUrl: config.isotypeUrl,
+        isotypeUrl: config.isotypeUrl,
       }
     }
   };
@@ -38,7 +41,8 @@ export function monthlyUpgradeEmail(userEmail: string, userName: string, nextBil
         firstName: userName.split(' ')[0] || "let's get started",
         nextBillingDate: formatDate(nextBillingDate),
         planName: planName,
-        logoUrl: config.logoUrl
+        logoUrl: config.isotypeUrl,
+        isotypeUrl: config.isotypeUrl,
       }
     }
   };
@@ -70,7 +74,8 @@ export function cancellationEmail(userEmail: string, userName: string, periodEnd
         firstName: userName.split(' ')[0] || "goodbye",
         periodEndDate: formatDate(periodEndDate),
         billingUrl: billingUrl,
-        logoUrl: config.logoUrl
+        logoUrl: config.isotypeUrl,
+        isotypeUrl: config.isotypeUrl,
       }
     }
   };
