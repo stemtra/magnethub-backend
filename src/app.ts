@@ -33,7 +33,19 @@ const app: express.Application = express();
 app.set('trust proxy', 1);
 
 app.use(helmet({
-  contentSecurityPolicy: config.isProd ? undefined : false, // Disable in dev for easier debugging
+  contentSecurityPolicy: config.isProd ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https://yt3.googleusercontent.com", "https://scontent.cdninstagram.com"],
+      scriptSrc: ["'self'"],
+      connectSrc: ["'self'"],
+      frameSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  } : false, // Disable in dev for easier debugging
   crossOriginEmbedderPolicy: false, // Allow embedding PDFs
   crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow cross-origin resource access
 }));
