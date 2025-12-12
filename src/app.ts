@@ -16,6 +16,7 @@ import authRoutes from './routes/auth.js';
 import brandRoutes from './routes/brands.js';
 import leadMagnetRoutes from './routes/leadMagnets.js';
 import publicRoutes from './routes/public.js';
+import publicSubdomainRoutes from './routes/publicSubdomain.js';
 import analyticsRoutes from './routes/analytics.js';
 import billingRoutes from './routes/billing.js';
 import sentryRoutes from './routes/sentry.js';
@@ -123,6 +124,9 @@ app.use('/api/sentry', sentryRoutes);
 
 // Public routes (landing pages and lead capture)
 app.use('/public', publicRoutes);
+// Public routes on username subdomains: https://{username}.<PUBLIC_ROOT_DOMAIN>/{slug}
+// Guarded router; it no-ops unless hostname matches a non-reserved subdomain.
+app.use('/', publicSubdomainRoutes);
 
 // API info route
 app.get('/api', (_req, res) => {

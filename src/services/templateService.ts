@@ -107,6 +107,79 @@ const templateFiles: Record<LandingPageTemplate, string> = {
   classic: 'landing-page-classic.html',
 };
 
+const INLINE_MINIMAL_TEMPLATE = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}}</title>
+    <style>
+      :root {
+        --bg: {{backgroundColor}};
+        --text: {{textColor}};
+        --muted: {{textMuted}};
+        --accent: {{accentColor}};
+        --surface: {{surfaceColor}};
+        --border: {{borderColor}};
+        --font: {{fontFamily}};
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: var(--font), system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .wrap { max-width: 960px; margin: 0 auto; padding: 48px 20px; }
+      .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px; }
+      h1 { margin: 0 0 10px; font-size: 34px; line-height: 1.2; }
+      p { margin: 0 0 14px; color: var(--muted); font-size: 16px; line-height: 1.6; }
+      ul { margin: 18px 0 0; padding-left: 20px; color: var(--text); }
+      li { margin: 8px 0; color: var(--text); }
+      .cta { margin-top: 22px; }
+      form { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+      input {
+        flex: 1;
+        min-width: 240px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+      }
+      button {
+        padding: 12px 16px;
+        border-radius: 12px;
+        border: 0;
+        background: var(--accent);
+        color: {{buttonTextColor}};
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .logo { height: 44px; margin-bottom: 18px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        {{#if logoUrl}}<img class="logo" src="{{logoUrl}}" alt="Logo" />{{/if}}
+        <h1>{{headline}}</h1>
+        <p>{{subheadline}}</p>
+        <ul>
+          {{#each benefits}}<li>{{this}}</li>{{/each}}
+        </ul>
+        <div class="cta">
+          <p><strong>{{cta}}</strong></p>
+          <form action="{{formAction}}" method="POST">
+            <input type="email" name="email" placeholder="you@email.com" required />
+            <button type="submit">Get it</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>`;
+
 async function loadTemplate(template: LandingPageTemplate = 'minimal'): Promise<string> {
   // Check cache first
   const cached = templateCache.get(template);
@@ -126,9 +199,21 @@ async function loadTemplate(template: LandingPageTemplate = 'minimal'): Promise<
     // Fallback to minimal if template not found
     logger.warn(`Template ${template} not found, falling back to minimal`);
     const fallbackPath = join(__dirname, '../templates', templateFiles.minimal);
-    const fallback = await readFile(fallbackPath, 'utf-8');
-    templateCache.set('minimal', fallback);
-    return fallback;
+    try {
+      const fallback = await readFile(fallbackPath, 'utf-8');
+      templateCache.set('minimal', fallback);
+      return fallback;
+    } catch (fallbackError) {
+      logger.error('Failed to load fallback landing page template; using inline minimal template', {
+        template,
+        templatePath,
+        fallbackPath,
+        error,
+        fallbackError,
+      });
+      templateCache.set('minimal', INLINE_MINIMAL_TEMPLATE);
+      return INLINE_MINIMAL_TEMPLATE;
+    }
   }
 }
 

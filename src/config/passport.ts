@@ -112,13 +112,19 @@ if (config.google.clientId && config.google.clientSecret) {
           if (baseUsername.length < 3) {
             baseUsername = `user${baseUsername}`;
           }
+          if (config.publicReservedSubdomains.includes(baseUsername)) {
+            baseUsername = `user-${baseUsername}`.slice(0, 30);
+          }
+          if (baseUsername.length > 30) {
+            baseUsername = baseUsername.slice(0, 30);
+          }
           
           let username = baseUsername;
           let counter = 1;
           
           // Ensure username is unique
           while (await User.findOne({ username })) {
-            username = `${baseUsername}${counter}`;
+            username = `${baseUsername.slice(0, 26)}${counter}`;
             counter++;
           }
 

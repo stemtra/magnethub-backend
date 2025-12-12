@@ -57,6 +57,13 @@ export const config = {
   landingUrl: process.env.LANDING_URL || 'http://localhost:3000',
   publicUrl: process.env.PUBLIC_URL || 'http://localhost:8081',
   logoUrl: process.env.LOGO_URL || 'https://magnethubai.com/MagnetHub%20Isotype.png',
+  // Public landing pages (subdomain routing)
+  // Example desired: https://{username}.magnethubai.com/{slug}
+  publicRootDomain: process.env.PUBLIC_ROOT_DOMAIN || 'magnethubai.com',
+  publicReservedSubdomains: (process.env.PUBLIC_RESERVED_SUBDOMAINS || 'app,api,www')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
   // Email/image assets
   // Public URL to the isotype stored in magnethub-landing/public/MagnetHub Isotype.png
   isotypeUrl: process.env.ISOTYPE_URL || 'https://magnethubai.com/MagnetHub%20Isotype.png',

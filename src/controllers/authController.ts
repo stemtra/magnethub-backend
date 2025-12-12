@@ -39,6 +39,10 @@ async function generateUniqueUsername(base: string): Promise<string> {
   if (username.length < 3) {
     username = `user${username}`;
   }
+  // Avoid reserved subdomains (e.g., app/api/www)
+  if (config.publicReservedSubdomains.includes(username)) {
+    username = `user-${username}`.slice(0, 30);
+  }
   
   if (username.length > 30) {
     username = username.slice(0, 30);
@@ -306,9 +310,13 @@ export async function updateProfile(
     }
 
     if (username !== undefined) {
+      const normalized = String(username).toLowerCase();
+      if (config.publicReservedSubdomains.includes(normalized)) {
+        throw AppError.badRequest('This subdomain is reserved. Please choose a different one.');
+      }
       // Check if username is taken
       const existingUser = await User.findOne({
-        username: username.toLowerCase(),
+        username: normalized,
         _id: { $ne: authReq.user._id }
       });
 
@@ -316,7 +324,7 @@ export async function updateProfile(
         throw AppError.conflict('This username is already taken');
       }
 
-      updates.username = username.toLowerCase();
+      updates.username = normalized;
     }
 
     const user = await User.findByIdAndUpdate(

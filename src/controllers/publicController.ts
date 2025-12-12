@@ -579,7 +579,7 @@ export async function thankYouPage(
   </main>
   
   <footer class="footer">
-    <a href="https://magnethub.ai" target="_blank" rel="noopener">Powered by MagnetHub</a>
+    <a href="https://magnethubai.com" target="_blank" rel="noopener">Powered by MagnetHub</a>
     
   </footer>
   
