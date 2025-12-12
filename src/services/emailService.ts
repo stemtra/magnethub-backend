@@ -46,7 +46,7 @@ export async function sendDeliveryEmail(
     logger.info('Sending delivery email', { leadId, recipientEmail });
 
     await mg.messages.create(config.mailgun.domain, {
-      from: config.mailgun.fromEmail,
+      from: 'MagnetHub AI <hello@magnethubai.com>',
       to: recipientEmail,
       subject,
       text: textBody,
