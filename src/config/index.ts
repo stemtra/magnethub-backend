@@ -64,6 +64,9 @@ export const config = {
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
+  // Optional debug key for troubleshooting public subdomain routing.
+  // If set, GET /__debug/host?key=... will return effective host/header info.
+  publicDebugKey: process.env.PUBLIC_DEBUG_KEY || '',
   // Email/image assets
   // Public URL to the isotype stored in magnethub-landing/public/MagnetHub Isotype.png
   isotypeUrl: process.env.ISOTYPE_URL || 'https://magnethubai.com/MagnetHub%20Isotype.png',

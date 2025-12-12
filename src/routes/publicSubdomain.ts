@@ -12,6 +12,8 @@ router.use(express.urlencoded({ extended: true }));
 function extractUsernameFromHostname(hostname: string): string | null {
   const rawRoot = String(config.publicRootDomain || '')
     .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/^\.+/, '')
     .replace(/\/+$/, '')
     .replace(/\.+$/, '')
     .toLowerCase();
@@ -21,7 +23,7 @@ function extractUsernameFromHostname(hostname: string): string | null {
   const root = (() => {
     try {
       if (rawRoot.startsWith('http://') || rawRoot.startsWith('https://')) {
-        return new URL(rawRoot).hostname.replace(/\.+$/, '').toLowerCase();
+        return new URL(rawRoot).hostname.replace(/^\.+/, '').replace(/\.+$/, '').toLowerCase();
       }
     } catch {
       // ignore
@@ -31,6 +33,7 @@ function extractUsernameFromHostname(hostname: string): string | null {
 
   const host = String(hostname || '')
     .trim()
+    .replace(/^["']|["']$/g, '')
     .replace(/\.+$/, '')
     .toLowerCase();
   if (!host || host === root) return null;
@@ -61,6 +64,42 @@ function getOriginalHostname(req: Request): string {
   // Strip port if present (e.g. "example.com:443")
   return host.replace(/:\d+$/, '');
 }
+
+router.get('/__debug/host', (req, res) => {
+  const key = typeof req.query.key === 'string' ? req.query.key : '';
+  if (!config.publicDebugKey || key !== config.publicDebugKey) {
+    return res.status(404).json({ success: false, error: 'Not found' });
+  }
+
+  const hostname = getOriginalHostname(req) || req.hostname;
+  const username = extractUsernameFromHostname(hostname);
+
+  return res.json({
+    success: true,
+    data: {
+      effective: {
+        hostname,
+        extractedUsername: username,
+        publicRootDomain: config.publicRootDomain,
+        publicReservedSubdomainsCount: config.publicReservedSubdomains.length,
+      },
+      express: {
+        hostname: req.hostname,
+        protocol: req.protocol,
+        secure: req.secure,
+        ip: req.ip,
+      },
+      headers: {
+        host: req.headers.host,
+        'x-forwarded-host': req.headers['x-forwarded-host'],
+        'x-forwarded-proto': req.headers['x-forwarded-proto'],
+        'x-forwarded-for': req.headers['x-forwarded-for'],
+        'x-real-ip': req.headers['x-real-ip'],
+        'cf-connecting-ip': req.headers['cf-connecting-ip'],
+      },
+    },
+  });
+});
 
 // Guard: only handle requests on username subdomains of the public root domain.
 router.use((req, _res, next) => {
