@@ -6,6 +6,11 @@ import * as publicController from '../controllers/publicController.js';
 
 const router: Router = Router();
 
+type PublicSubdomainRequest = Request & {
+  _publicUsername?: string;
+  _publicHostname?: string;
+};
+
 // Parse URL-encoded bodies (for form submissions)
 router.use(express.urlencoded({ extended: true }));
 
@@ -93,6 +98,10 @@ router.get('/__debug/host', (req, res) => {
         publicRootDomain: config.publicRootDomain,
         publicReservedSubdomainsCount: config.publicReservedSubdomains.length,
       },
+      internal: {
+        storedUsername: (req as PublicSubdomainRequest)._publicUsername,
+        storedHostname: (req as PublicSubdomainRequest)._publicHostname,
+      },
       express: {
         hostname: req.hostname,
         protocol: req.protocol,
@@ -117,8 +126,10 @@ router.use((req, _res, next) => {
   const hostname = getOriginalHostname(req) || req.hostname;
   const username = extractUsernameFromHostname(hostname);
   if (!username) return next();
-  // Inject into params so existing controller logic can be reused.
-  (req.params as Record<string, string>).username = username;
+  // NOTE: don't write to req.params here. Express overwrites req.params during route matching.
+  // Store on the request instead, then copy into params inside each route handler.
+  (req as PublicSubdomainRequest)._publicUsername = username;
+  (req as PublicSubdomainRequest)._publicHostname = hostname;
   return next();
 });
 
@@ -127,9 +138,9 @@ router.use((req, _res, next) => {
  * Serve the published landing page on username subdomain
  */
 router.get('/:slug', (req, res, next) => {
-  if (!(req.params as Record<string, string>).username) return next();
-  // Map params to controller shape
-  (req.params as Record<string, string>).slug = req.params.slug;
+  const username = (req as PublicSubdomainRequest)._publicUsername;
+  if (!username) return next();
+  (req.params as Record<string, string>).username = username;
   return publicController.serveLandingPage(req, res, next);
 });
 
@@ -138,7 +149,9 @@ router.get('/:slug', (req, res, next) => {
  * Handle lead capture form submission (HTML form)
  */
 router.post('/:slug/subscribe', (req, res, next) => {
-  if (!(req.params as Record<string, string>).username) return next();
+  const username = (req as PublicSubdomainRequest)._publicUsername;
+  if (!username) return next();
+  (req.params as Record<string, string>).username = username;
   return publicController.subscribe(req, res, next);
 });
 
@@ -147,7 +160,9 @@ router.post('/:slug/subscribe', (req, res, next) => {
  * Handle lead capture via API (for AJAX submissions)
  */
 router.post('/:slug/subscribe-api', (req, res, next) => {
-  if (!(req.params as Record<string, string>).username) return next();
+  const username = (req as PublicSubdomainRequest)._publicUsername;
+  if (!username) return next();
+  (req.params as Record<string, string>).username = username;
   return publicController.subscribeApi(req, res, next);
 });
 
@@ -156,7 +171,9 @@ router.post('/:slug/subscribe-api', (req, res, next) => {
  * Show thank you page after form submission
  */
 router.get('/:slug/thank-you', (req, res, next) => {
-  if (!(req.params as Record<string, string>).username) return next();
+  const username = (req as PublicSubdomainRequest)._publicUsername;
+  if (!username) return next();
+  (req.params as Record<string, string>).username = username;
   return publicController.thankYouPage(req, res, next);
 });
 
