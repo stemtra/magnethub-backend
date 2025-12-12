@@ -35,7 +35,7 @@ export const config = {
       agency: process.env.STRIPE_PRICE_AGENCY || '',
     },
   },
-
+  allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',').map((origin: string) => origin.trim()) || [],
   // Cloudflare R2 (S3-compatible)
   r2: {
     accountId: process.env.R2_ACCOUNT_ID || '',

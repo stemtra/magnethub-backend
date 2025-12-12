@@ -37,7 +37,19 @@ app.use(helmet({
 // ============================================
 
 app.use(cors({
-  origin: config.clientUrl,
+  origin: (origin, callback) => {
+    // OAuth redirects and direct browser navigations often do not include an Origin header.
+    // We allow those requests, while still enforcing the allowlist for cross-origin XHR/fetch.
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (config.allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
