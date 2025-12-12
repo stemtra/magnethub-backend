@@ -132,7 +132,11 @@ export async function serveLandingPage(
     // If we have landing page copy, render using template with user's brand
     if (leadMagnet.landingPageCopyJson) {
       const brandSettings = user.brandSettings || DEFAULT_BRAND_SETTINGS;
-      const formAction = `/public/${username}/${slug}/subscribe`;
+      // When served on a username subdomain (publicSubdomain router), keep the
+      // form action relative to that origin (/{slug}/subscribe). When served via
+      // /public/:username/:slug, keep the legacy /public/... action.
+      const isPublicPath = req.baseUrl === '/public';
+      const formAction = isPublicPath ? `/public/${username}/${slug}/subscribe` : `/${slug}/subscribe`;
       
       html = await renderLandingPage(
         brandSettings,
@@ -186,7 +190,11 @@ export async function subscribe(
 ): Promise<void> {
   try {
     const { username, slug } = req.params;
-    const { email } = req.body;
+    // Be defensive: depending on the client's Content-Type (or malformed requests),
+    // Express may leave req.body undefined or as a non-object. Avoid runtime crashes.
+    const body =
+      req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : ({} as Record<string, unknown>);
+    const email = typeof body.email === 'string' ? body.email : undefined;
 
     if (!username || !slug) {
       throw AppError.notFound('Page not found');
@@ -227,7 +235,7 @@ export async function subscribe(
 
     if (existingLead) {
       // Return success anyway (don't reveal if email exists)
-      return redirectToThankYou(res, username, slug);
+      return redirectToThankYou(req, res, username, slug);
     }
 
     // Detect traffic source
@@ -268,14 +276,15 @@ export async function subscribe(
     }
 
     // Redirect to thank you page
-    redirectToThankYou(res, username, slug);
+    redirectToThankYou(req, res, username, slug);
   } catch (error) {
     next(error);
   }
 }
 
-function redirectToThankYou(res: Response, username: string, slug: string): void {
-  res.redirect(`/public/${username}/${slug}/thank-you`);
+function redirectToThankYou(req: Request, res: Response, username: string, slug: string): void {
+  const isPublicPath = req.baseUrl === '/public';
+  res.redirect(isPublicPath ? `/public/${username}/${slug}/thank-you` : `/${slug}/thank-you`);
 }
 
 // ============================================
@@ -628,7 +637,11 @@ export async function subscribeApi(
 ): Promise<void> {
   try {
     const { username, slug } = req.params;
-    const { email } = req.body;
+    // Be defensive: depending on the client's Content-Type (or malformed requests),
+    // Express may leave req.body undefined or as a non-object. Avoid runtime crashes.
+    const body =
+      req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : ({} as Record<string, unknown>);
+    const email = typeof body.email === 'string' ? body.email : undefined;
 
     if (!username || !slug) {
       throw AppError.notFound('Page not found');
