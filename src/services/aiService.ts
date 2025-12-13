@@ -346,13 +346,13 @@ export async function generateContent(
   };
 
   const lengthGuides: Record<LeadMagnetType, string> = {
-    guide: 'Target 8-12 pages total. Write 180-280 words per section. Keep it tight, actionable, and avoid filler.',
-    checklist: 'Target 2-4 pages total. Prefer bullets. 10-18 checklist items total. Each item should be 1-2 lines, optionally with a short parenthetical hint.',
-    mistakes: 'Target 3-6 pages total. 5-7 mistakes total. Each mistake should be ~120-180 words, and include 2-4 bullet fixes.',
-    blueprint: 'Target 4-7 pages total. 4-6 steps/phases. Each step should be ~150-220 words + 2-4 bullets.',
-    swipefile: 'Target 6-10 pages total. 8-12 templates. Keep each template concise (60-120 words) and highly copy-pasteable. Avoid long explanations.',
-    cheatsheet: 'Target 1-2 pages total. Extremely dense/scannable. Minimal prose; mostly bullets, short phrases, quick tips.',
-    casestudy: 'Target 4-8 pages total. 800-1400 words total, with short sections and concrete metrics. Avoid long narrative tangents.',
+    guide: 'Target 1,800–3,000 words total. Write ~200–320 words per section. Keep it tight, actionable, and avoid filler.',
+    checklist: 'Target 450–900 words total. Prefer bullets. 10–18 checklist items total. Each item should be 1–2 lines, optionally with a short parenthetical hint.',
+    mistakes: 'Target 900–1,600 words total. 5–7 mistakes total. Each mistake should be ~120–200 words and include 2–4 bullet fixes.',
+    blueprint: 'Target 1,100–2,000 words total. 4–6 steps/phases. Each step should be ~160–240 words + 2–4 bullets.',
+    swipefile: 'Target 900–1,700 words total. 8–12 templates. Each template should be 60–120 words and highly copy‑pasteable. Avoid long explanations.',
+    cheatsheet: 'Target 400–900 words total. Extremely dense/scannable. Minimal prose; mostly bullets, short phrases, quick tips.',
+    casestudy: 'Target 900–1,600 words total. Short sections with concrete metrics. Avoid long narrative tangents.',
   };
 
   // Hard cap output to prevent "cheatsheet" (and others) from becoming long PDFs.

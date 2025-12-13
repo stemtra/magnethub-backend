@@ -98,7 +98,7 @@ function generatePdfHtml(
         .map((section, index) => renderFlowSection(section, index + 1, type))
         .join('')
     : content.sections
-        .map((section, index) => renderSection(section, index + 1, type))
+        .map((section, index) => renderSection(section, index + 1, type, index === content.sections.length - 1))
         .join('');
 
   // Logo HTML if available
@@ -231,9 +231,8 @@ function generatePdfHtml(
       position: relative;
     }
 
-    .content-page:last-of-type {
-      page-break-after: auto;
-    }
+    /* We intentionally break AFTER content so the CTA naturally starts on a fresh page.
+       Avoid forcing a break BEFORE the CTA (double-break can create blank pages). */
 
     /* ================================
        COMPACT FLOW CONTENT
@@ -242,6 +241,7 @@ function generatePdfHtml(
     .content-flow {
       padding: 46px 54px;
       background: var(--color-background);
+      page-break-after: always;
     }
 
     /* Cheatsheet: maximize density (often 1-2 pages) */
@@ -251,6 +251,7 @@ function generatePdfHtml(
       line-height: 1.45;
       column-count: 2;
       column-gap: 26px;
+      column-fill: auto;
     }
 
     .content-flow.cheatsheet .content-section {
@@ -453,7 +454,6 @@ function generatePdfHtml(
         ? `linear-gradient(180deg, ${surfaceColor} 0%, ${brand.backgroundColor} 100%)`
         : `linear-gradient(180deg, ${surfaceColor} 0%, ${brand.backgroundColor} 100%)`
       };
-      page-break-before: always;
     }
 
     .cta-logo {
@@ -534,12 +534,13 @@ function generatePdfHtml(
 function renderSection(
   section: { title: string; content: string },
   sectionNum: number,
-  _type: LeadMagnetType
+  _type: LeadMagnetType,
+  isLast: boolean
 ): string {
-  const contentHtml = parseAndRenderContent(section.content, _type);
+  const contentHtml = parseAndRenderContent(stripRedundantTitle(section.content, section.title), _type);
 
   return `
-  <div class="content-page">
+  <div class="content-page${isLast ? ' is-last' : ''}">
     <div class="section-header">
       <div class="section-number">${sectionNum}</div>
       <h2 class="section-title">${escapeHtml(section.title)}</h2>
@@ -556,7 +557,7 @@ function renderFlowSection(
   _sectionNum: number,
   type: LeadMagnetType
 ): string {
-  const contentHtml = parseAndRenderContent(section.content, type);
+  const contentHtml = parseAndRenderContent(stripRedundantTitle(section.content, section.title), type);
   return `
   <section class="content-section">
     <h2 class="content-section-title">${escapeHtml(section.title)}</h2>
@@ -564,6 +565,37 @@ function renderFlowSection(
       ${contentHtml}
     </div>
   </section>`;
+}
+
+function stripRedundantTitle(content: string, title: string): string {
+  // If the model includes the section title again as the first header line inside the content,
+  // strip it so the PDF doesn't show the title twice.
+  const lines = content.split('\n');
+  const firstIdx = lines.findIndex((l) => l.trim().length > 0);
+  if (firstIdx === -1) return content;
+
+  const first = lines[firstIdx]!.trim();
+  const normalizedTitle = cleanText(title).toLowerCase();
+
+  // Match markdown headers like "## Title" / "### Title"
+  if (first.startsWith('## ') || first.startsWith('### ')) {
+    const headerText = cleanText(first.replace(/^#{2,3}\s+/, '')).toLowerCase();
+    if (headerText === normalizedTitle) {
+      const next = lines.slice(firstIdx + 1);
+      return next.join('\n').trimStart();
+    }
+  }
+
+  // Match bold-only header like "**Title**"
+  if (first.startsWith('**') && first.endsWith('**') && first.length < 200) {
+    const headerText = cleanText(first.slice(2, -2)).toLowerCase();
+    if (headerText === normalizedTitle) {
+      const next = lines.slice(firstIdx + 1);
+      return next.join('\n').trimStart();
+    }
+  }
+
+  return content;
 }
 
 function parseAndRenderContent(content: string, type: LeadMagnetType): string {
