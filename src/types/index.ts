@@ -137,6 +137,9 @@ export type LeadMagnetType =
   | 'casestudy';
 export type LeadMagnetTone = 'professional' | 'friendly' | 'expert' | 'persuasive';
 
+export type LeadMagnetGenerationStatus = 'pdf_ready' | 'complete' | 'needs_attention';
+export type LeadMagnetAssetStatus = 'pending' | 'ready' | 'failed';
+
 export interface ILeadMagnet extends Document {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
@@ -155,6 +158,10 @@ export interface ILeadMagnet extends Document {
   outlineJson?: IOutline;
   metaJson?: IBusinessMeta;
   contentJson?: ILeadMagnetContent;
+  generationStatus?: LeadMagnetGenerationStatus;
+  landingStatus?: LeadMagnetAssetStatus;
+  emailsStatus?: LeadMagnetAssetStatus;
+  generationError?: string;
   slug: string;
   title?: string;
   isPublished: boolean;

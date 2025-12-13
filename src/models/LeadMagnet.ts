@@ -88,6 +88,35 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
     contentJson: {
       type: Schema.Types.Mixed,
     },
+    generationStatus: {
+      type: String,
+      enum: {
+        values: ['pdf_ready', 'complete', 'needs_attention'],
+        message: 'Generation status must be one of: pdf_ready, complete, needs_attention',
+      },
+      default: 'pdf_ready',
+    },
+    landingStatus: {
+      type: String,
+      enum: {
+        values: ['pending', 'ready', 'failed'],
+        message: 'Landing status must be one of: pending, ready, failed',
+      },
+      default: 'pending',
+    },
+    emailsStatus: {
+      type: String,
+      enum: {
+        values: ['pending', 'ready', 'failed'],
+        message: 'Emails status must be one of: pending, ready, failed',
+      },
+      default: 'pending',
+    },
+    generationError: {
+      type: String,
+      trim: true,
+      maxlength: [2000, 'Generation error cannot exceed 2000 characters'],
+    },
     slug: {
       type: String,
       required: [true, 'Slug is required'],

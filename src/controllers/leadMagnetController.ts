@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { LeadMagnet } from '../models/LeadMagnet.js';
 import { Lead } from '../models/Lead.js';
 import { Brand } from '../models/Brand.js';
-import { runFullPipeline } from '../services/aiService.js';
+import { runPipelineToContent, generateLandingPageCopy, generateEmailSequence } from '../services/aiService.js';
 import { generatePdf } from '../services/pdfService.js';
 import { uploadPdf, getSignedPdfUrl } from '../services/storageService.js';
 import { renderLandingPage } from '../services/templateService.js';
@@ -142,7 +142,7 @@ export async function generate(
     }
 
     // Run the AI pipeline (skip scraping if we have cached brand data)
-    const pipelineResult = await runFullPipeline(sourceUrl, {
+    const phase1 = await runPipelineToContent(sourceUrl, {
       audience,
       type,
       tone,
@@ -157,16 +157,16 @@ export async function generate(
 
     // Create brand if it doesn't exist
     if (!brand) {
-      const brandSettings: IBrandSettings = { ...pipelineResult.extractedBrand };
+      const brandSettings: IBrandSettings = { ...phase1.extractedBrand };
       
       // For Instagram, use profile picture as logo
-      if (sourceType === 'instagram' && pipelineResult.instagramProfilePic) {
-        brandSettings.logoUrl = pipelineResult.instagramProfilePic;
+      if (sourceType === 'instagram' && phase1.instagramProfilePic) {
+        brandSettings.logoUrl = phase1.instagramProfilePic;
       }
       
       // For YouTube, use channel thumbnail as logo
-      if (sourceType === 'youtube' && pipelineResult.youtubeThumbnail) {
-        brandSettings.logoUrl = pipelineResult.youtubeThumbnail;
+      if (sourceType === 'youtube' && phase1.youtubeThumbnail) {
+        brandSettings.logoUrl = phase1.youtubeThumbnail;
       }
       
       // Check if this is the first brand
@@ -175,7 +175,7 @@ export async function generate(
       brand = await Brand.create({
         userId: req.user._id,
         name: brandName,
-        description: pipelineResult.sourceDescription,
+        description: phase1.sourceDescription,
         sourceType,
         sourceUrl,
         settings: brandSettings,
@@ -188,38 +188,25 @@ export async function generate(
         brandName: brand.name,
         sourceType,
         hasLogo: !!brandSettings.logoUrl,
-        hasDescription: !!pipelineResult.sourceDescription,
+        hasDescription: !!phase1.sourceDescription,
       });
-    } else if (!brand.description && pipelineResult.sourceDescription) {
+    } else if (!brand.description && phase1.sourceDescription) {
       // Update existing brand with description if missing
-      brand.description = pipelineResult.sourceDescription;
+      brand.description = phase1.sourceDescription;
       await brand.save();
       logger.info('Updated brand with description', { brandId: brand._id });
     }
 
-    // Render landing page HTML using template + brand + copy
+    // We'll generate landing page + emails asynchronously after responding.
     const formAction = `/public/${req.user.username}/${slug}/subscribe`;
     const finalBrandSettings = brandToUse || brand!.settings;
-    const landingPageHtml = await renderLandingPage(
-      finalBrandSettings,
-      pipelineResult.landingPageCopy,
-      formAction
-    );
 
     // Generate PDF with brand settings
-    const pdfBuffer = await generatePdf(pipelineResult.content, type, finalBrandSettings, brand!.name);
+    const pdfBuffer = await generatePdf(phase1.content, type, finalBrandSettings, brand!.name);
 
     // Upload PDF to storage (local or cloud)
     const filename = `pdfs/${req.user._id}/${slug}-${uuidv4().slice(0, 8)}.pdf`;
     const pdfUrl = await uploadPdf(pdfBuffer, filename);
-
-    // Update email sequence with actual PDF URL
-    if (pipelineResult.emails.emails[0]) {
-      pipelineResult.emails.emails[0].body_html = 
-        pipelineResult.emails.emails[0].body_html.replace('{{PDF_URL}}', pdfUrl);
-      pipelineResult.emails.emails[0].body_text = 
-        pipelineResult.emails.emails[0].body_text.replace('{{PDF_URL}}', pdfUrl);
-    }
 
     // Create lead magnet record with brand reference
     const leadMagnet = await LeadMagnet.create({
@@ -232,16 +219,17 @@ export async function generate(
       goal,
       type,
       tone,
-      title: pipelineResult.content.title,
+      title: phase1.content.title,
       pdfUrl,
-      landingPageHtml,
-      landingPageCopyJson: pipelineResult.landingPageCopy,
-      emailsJson: pipelineResult.emails,
-      outlineJson: pipelineResult.outline,
-      metaJson: pipelineResult.meta,
-      contentJson: pipelineResult.content,
+      // landingPageHtml/landingPageCopyJson/emailsJson will be filled async
+      outlineJson: phase1.outline,
+      metaJson: phase1.meta,
+      contentJson: phase1.content,
       slug,
       isPublished: true,
+      generationStatus: 'pdf_ready',
+      landingStatus: 'pending',
+      emailsStatus: 'pending',
     });
 
     const leadMagnetWithSignedUrl = await attachSignedPdfUrl(leadMagnet.toObject());
@@ -260,6 +248,85 @@ export async function generate(
     res.status(201).json({
       success: true,
       data: { leadMagnet: leadMagnetWithSignedUrl },
+    });
+
+    // ============================================
+    // Async completion (landing page + emails)
+    // ============================================
+    // NOTE: In-process async. If the server restarts, these may remain pending.
+    // Workspace UI will show "Generating..." and we can later add a queue/worker.
+    setImmediate(() => {
+      void (async () => {
+        const leadMagnetId = leadMagnet._id;
+        try {
+          const landingCopyPromise = generateLandingPageCopy(phase1.meta, phase1.content, sourceType);
+          const emailsPromise = generateEmailSequence(phase1.meta, phase1.content, pdfUrl, tone, goal, sourceType);
+
+          const [landingCopyRes, emailsRes] = await Promise.allSettled([landingCopyPromise, emailsPromise]);
+
+          let landingPageCopy: any | undefined;
+          let emailsJson: any | undefined;
+          let landingStatus: 'ready' | 'failed' = 'failed';
+          let emailsStatus: 'ready' | 'failed' = 'failed';
+
+          if (landingCopyRes.status === 'fulfilled') {
+            landingPageCopy = landingCopyRes.value;
+            landingStatus = 'ready';
+          }
+
+          if (emailsRes.status === 'fulfilled') {
+            emailsJson = emailsRes.value;
+            emailsStatus = 'ready';
+          }
+
+          let landingPageHtml: string | undefined;
+          if (landingPageCopy) {
+            landingPageHtml = await renderLandingPage(finalBrandSettings, landingPageCopy, formAction);
+          }
+
+          const generationStatus =
+            landingStatus === 'ready' && emailsStatus === 'ready' ? 'complete' : 'needs_attention';
+
+          const generationError =
+            generationStatus === 'needs_attention'
+              ? [
+                  landingStatus === 'failed' ? 'landing_failed' : null,
+                  emailsStatus === 'failed' ? 'emails_failed' : null,
+                ].filter(Boolean).join(',')
+              : undefined;
+
+          await LeadMagnet.updateOne(
+            { _id: leadMagnetId },
+            {
+              landingPageHtml,
+              landingPageCopyJson: landingPageCopy,
+              emailsJson,
+              landingStatus,
+              emailsStatus,
+              generationStatus,
+              generationError,
+            }
+          );
+
+          logger.info('Lead magnet async completion finished', {
+            leadMagnetId: leadMagnetId.toString(),
+            landingStatus,
+            emailsStatus,
+            generationStatus,
+          });
+        } catch (error) {
+          logger.error('Lead magnet async completion failed', { leadMagnetId: leadMagnetId.toString(), error });
+          await LeadMagnet.updateOne(
+            { _id: leadMagnetId },
+            {
+              generationStatus: 'needs_attention',
+              landingStatus: 'failed',
+              emailsStatus: 'failed',
+              generationError: error instanceof Error ? error.message : 'async_completion_failed',
+            }
+          );
+        }
+      })();
     });
   } catch (error) {
     next(error);
