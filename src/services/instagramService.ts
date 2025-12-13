@@ -223,11 +223,30 @@ function parseFromMetaTags(html: string, username: string): IInstagramProfile | 
   const descMatch = html.match(/<meta\s+name="description"\s+content="([^"]+)"/i) ||
                     html.match(/content="([^"]+)"\s+name="description"/i);
 
+  // Profile picture is often exposed via og:image / twitter:image even when GraphQL JSON is blocked.
+  const ogImageMatch = html.match(/<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"/i) ||
+                       html.match(/content="([^"]+)"\s+(?:property|name)="og:image"/i);
+  const twitterImageMatch = html.match(/<meta\s+(?:property|name)="twitter:image"\s+content="([^"]+)"/i) ||
+                            html.match(/content="([^"]+)"\s+(?:property|name)="twitter:image"/i);
+
   let followers = 0;
   let following = 0;
   let posts = 0;
   let fullName = '';
   let bio = '';
+  let profilePicUrl: string | undefined;
+
+  const decodeMetaUrl = (url: string): string =>
+    url
+      .trim()
+      // minimal HTML entity decoding for common cases
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"');
+
+  const candidateImage = ogImageMatch?.[1] || twitterImageMatch?.[1];
+  if (candidateImage) {
+    profilePicUrl = decodeMetaUrl(candidateImage);
+  }
 
   // Parse og:description for counts
   if (ogDescMatch) {
@@ -292,6 +311,7 @@ function parseFromMetaTags(html: string, username: string): IInstagramProfile | 
     followerCount: followers,
     followingCount: following,
     postsCount: posts,
+    profilePicUrl,
     isVerified: html.includes('"is_verified":true') || html.includes('"verified":true'),
     recentPosts: [], // Can't reliably extract posts from meta tags
   };
