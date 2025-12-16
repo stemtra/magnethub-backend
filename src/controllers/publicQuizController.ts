@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { Quiz } from '../models/Quiz.js';
 import { QuizResponse } from '../models/QuizResponse.js';
 import { User } from '../models/User.js';
+import { Brand } from '../models/Brand.js';
 import { sendQuizResultEmail } from '../services/emailService.js';
 import { calculateQuizResult, validateQuizResponses } from '../utils/quizCalculation.js';
 import { AppError } from '../utils/AppError.js';
@@ -111,6 +112,19 @@ export async function getQuiz(
       throw AppError.notFound('Quiz not found');
     }
 
+    // Get brand information for branding display
+    let brandInfo: { sourceType: string; sourceUrl: string; name: string } | null = null;
+    if (quiz.brandId) {
+      const brand = await Brand.findById(quiz.brandId).select('sourceType sourceUrl name');
+      if (brand) {
+        brandInfo = {
+          sourceType: brand.sourceType,
+          sourceUrl: brand.sourceUrl,
+          name: brand.name,
+        };
+      }
+    }
+
     // Track view (async, don't block response)
     Quiz.updateOne({ _id: quiz._id }, { $inc: { 'stats.views': 1 } }).catch((err) => {
       logger.error('Failed to track quiz view', err);
@@ -145,6 +159,7 @@ export async function getQuiz(
       accentColor: quiz.accentColor,
       logoUrl: quiz.logoUrl,
       fontStyle: quiz.fontStyle,
+      brandInfo: brandInfo,
     };
 
     res.json({
@@ -309,30 +324,39 @@ export async function submitQuiz(
     }
 
     if (email) {
-      // Check if email already submitted for this quiz
+      // Check if email already exists for this quiz (any status)
       const existing = await QuizResponse.findOne({
         quizId: quiz._id,
         email: email.toLowerCase(),
-        completedAt: { $exists: true },
       });
 
       if (existing) {
-        // Return the existing result (idempotent)
-        const existingResult = quiz.results.find(
-          (r) => r._id.toString() === existing.resultId?.toString()
-        );
+        // If completed, return existing result (idempotent)
+        if (existing.completedAt) {
+          const existingResult = quiz.results.find(
+            (r) => r._id.toString() === existing.resultId?.toString()
+          );
 
-        logger.info('Returning existing quiz result', {
+          logger.info('Returning existing quiz result', {
+            quizId: quiz._id,
+            email: email.toLowerCase(),
+            resultId: existing.resultId,
+          });
+
+          res.json({
+            success: true,
+            data: { result: existingResult || result },
+          });
+          return;
+        }
+
+        // If incomplete, reuse the existing response instead of sessionId
+        logger.info('Reusing existing incomplete response', {
           quizId: quiz._id,
           email: email.toLowerCase(),
-          resultId: existing.resultId,
+          existingResponseId: existing._id,
         });
-
-        res.json({
-          success: true,
-          data: { result: existingResult || result },
-        });
-        return;
+        response = existing;
       }
     }
 
