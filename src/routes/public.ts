@@ -11,6 +11,13 @@ router.use(express.urlencoded({ extended: true }));
 router.use(express.json());
 
 /**
+ * Tenant validation
+ */
+
+// GET /public/tenant/:slug - Get tenant/user info by slug
+router.get('/tenant/:slug', publicController.getTenantBySlug);
+
+/**
  * Quiz routes (must come before generic :slug routes)
  */
 
