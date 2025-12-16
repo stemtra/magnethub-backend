@@ -4,6 +4,7 @@ import express from 'express';
 import { config } from '../config/index.js';
 import * as publicController from '../controllers/publicController.js';
 import * as publicQuizController from '../controllers/publicQuizController.js';
+import { User } from '../models/User.js';
 
 const router: Router = Router();
 
@@ -134,6 +135,28 @@ router.use((req, _res, next) => {
   return next();
 });
 
+// Middleware: Validate that the username exists, redirect if not
+router.use(async (req, res, next) => {
+  const username = (req as PublicSubdomainRequest)._publicUsername;
+  if (!username) return next();
+
+  // Skip validation for debug endpoint
+  if (req.path.startsWith('/__debug')) return next();
+
+  try {
+    // Check if user exists
+    const user = await User.findOne({ username: username.toLowerCase() }).select('_id');
+    if (!user) {
+      // User doesn't exist, redirect to main site
+      return res.redirect(302, 'https://magnethubai.com');
+    }
+    return next();
+  } catch (err) {
+    // On error, just continue (better than breaking the site)
+    return next();
+  }
+});
+
 // ============================================
 // Tenant Validation
 // ============================================
@@ -243,6 +266,14 @@ router.get('/:slug/thank-you', (req, res, next) => {
   if (!username) return next();
   (req.params as Record<string, string>).username = username;
   return publicController.thankYouPage(req, res, next);
+});
+
+/**
+ * Catch-all: if we reach here, user exists but the route/slug doesn't
+ * Redirect to main site instead of showing JSON error
+ */
+router.use((_req, res) => {
+  return res.redirect(302, 'https://magnethubai.com');
 });
 
 export default router;
