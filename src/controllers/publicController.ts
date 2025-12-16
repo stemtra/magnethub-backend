@@ -83,6 +83,58 @@ function getClientIp(req: Request): string | undefined {
 }
 
 // ============================================
+// Get Tenant/User Info by Slug
+// ============================================
+
+export async function getTenantBySlug(
+  req: Request,
+  res: Response<ApiResponse<{ tenant: { username: string; name: string; logoUrl?: string; primaryColor?: string; exists: boolean } }>>,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { slug } = req.params;
+
+    if (!slug) {
+      throw AppError.badRequest('Slug is required');
+    }
+
+    // Find user by username (slug)
+    const user = await User.findOne({ username: slug.toLowerCase() }).select('username name brandSettings');
+
+    if (!user) {
+      // Return exists: false instead of 404 so frontend can show proper message
+      res.json({
+        success: true,
+        data: {
+          tenant: {
+            username: slug,
+            name: '',
+            exists: false,
+          },
+        },
+      });
+      return;
+    }
+
+    // Return tenant metadata
+    res.json({
+      success: true,
+      data: {
+        tenant: {
+          username: user.username,
+          name: user.name || user.username,
+          logoUrl: user.brandSettings?.logoUrl,
+          primaryColor: user.brandSettings?.primaryColor,
+          exists: true,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ============================================
 // Get Landing Page Data (JSON API)
 // ============================================
 
