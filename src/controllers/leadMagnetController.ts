@@ -517,11 +517,23 @@ export async function getAllLeads(
     const userLeadMagnets = await LeadMagnet.find({ userId: req.user._id }).select('_id title slug type');
     const leadMagnetIds = userLeadMagnets.map(lm => lm._id);
 
-    // Get all leads for these lead magnets
+    // Get all quizzes for this user
+    const { Quiz } = await import('../models/Quiz.js');
+    const { QuizResponse } = await import('../models/QuizResponse.js');
+    const userQuizzes = await Quiz.find({ userId: req.user._id }).select('_id title slug');
+    const quizIds = userQuizzes.map(q => q._id);
+
+    // Get all leads for lead magnets
     const leads = await Lead.find({ leadMagnetId: { $in: leadMagnetIds } })
       .sort({ createdAt: -1 });
 
-    // Create a map for quick lookup
+    // Get all quiz responses with emails (quiz leads)
+    const quizResponses = await QuizResponse.find({ 
+      quizId: { $in: quizIds },
+      email: { $exists: true, $ne: '' }
+    }).sort({ createdAt: -1 });
+
+    // Create maps for quick lookup
     const magnetMap = new Map(userLeadMagnets.map(lm => [lm._id.toString(), {
       id: lm._id.toString(),
       title: lm.title || 'Untitled',
@@ -529,7 +541,14 @@ export async function getAllLeads(
       type: lm.type,
     }]));
 
-    // Enrich leads with lead magnet info
+    const quizMap = new Map(userQuizzes.map(q => [q._id.toString(), {
+      id: q._id.toString(),
+      title: q.title || 'Untitled Quiz',
+      slug: q.slug,
+      type: 'quiz',
+    }]));
+
+    // Enrich lead magnet leads
     const enrichedLeads: LeadWithMagnet[] = leads.map(lead => ({
       id: lead._id.toString(),
       email: lead.email,
@@ -539,9 +558,24 @@ export async function getAllLeads(
       leadMagnet: magnetMap.get(lead.leadMagnetId.toString()),
     }));
 
+    // Enrich quiz leads
+    const enrichedQuizLeads: LeadWithMagnet[] = quizResponses.map(response => ({
+      id: response._id.toString(),
+      email: response.email!,
+      leadMagnetId: response.quizId.toString(),
+      deliveryStatus: response.emailDeliveryStatus,
+      createdAt: response.createdAt,
+      leadMagnet: quizMap.get(response.quizId.toString()),
+    }));
+
+    // Combine and sort by creation date
+    const allLeads = [...enrichedLeads, ...enrichedQuizLeads].sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
     res.json({
       success: true,
-      data: { leads: enrichedLeads, total: enrichedLeads.length },
+      data: { leads: allLeads, total: allLeads.length },
     });
   } catch (error) {
     next(error);
@@ -566,20 +600,45 @@ export async function exportAllLeadsCsv(
     const userLeadMagnets = await LeadMagnet.find({ userId: req.user._id }).select('_id title slug');
     const leadMagnetIds = userLeadMagnets.map(lm => lm._id);
 
-    // Create a map for quick lookup
-    const magnetMap = new Map(userLeadMagnets.map(lm => [lm._id.toString(), lm.title || lm.slug]));
+    // Get all quizzes for this user
+    const { Quiz } = await import('../models/Quiz.js');
+    const { QuizResponse } = await import('../models/QuizResponse.js');
+    const userQuizzes = await Quiz.find({ userId: req.user._id }).select('_id title slug');
+    const quizIds = userQuizzes.map(q => q._id);
 
-    // Get all leads
+    // Create maps for quick lookup
+    const magnetMap = new Map(userLeadMagnets.map(lm => [lm._id.toString(), lm.title || lm.slug]));
+    const quizMap = new Map(userQuizzes.map(q => [q._id.toString(), q.title || q.slug]));
+
+    // Get all leads from lead magnets
     const leads = await Lead.find({ leadMagnetId: { $in: leadMagnetIds } })
       .sort({ createdAt: -1 });
 
-    // Generate CSV
-    const csvHeader = 'email,lead_magnet,captured_at,delivery_status\n';
-    const csvRows = leads.map(lead => 
-      `${lead.email},"${magnetMap.get(lead.leadMagnetId.toString()) || 'Unknown'}",${lead.createdAt.toISOString()},${lead.deliveryStatus}`
-    ).join('\n');
+    // Get all quiz responses with emails
+    const quizResponses = await QuizResponse.find({ 
+      quizId: { $in: quizIds },
+      email: { $exists: true, $ne: '' }
+    }).sort({ createdAt: -1 });
 
-    const csv = csvHeader + csvRows;
+    // Generate CSV
+    const csvHeader = 'email,lead_magnet,type,captured_at,delivery_status\n';
+    
+    const leadRows = leads.map(lead => 
+      `${lead.email},"${magnetMap.get(lead.leadMagnetId.toString()) || 'Unknown'}",PDF,${lead.createdAt.toISOString()},${lead.deliveryStatus}`
+    );
+
+    const quizRows = quizResponses.map(response => 
+      `${response.email},"${quizMap.get(response.quizId.toString()) || 'Unknown'}",Quiz,${response.createdAt.toISOString()},${response.emailDeliveryStatus}`
+    );
+
+    const allRows = [...leadRows, ...quizRows].sort((a, b) => {
+      // Extract timestamps and sort descending
+      const timeA = a.split(',')[3];
+      const timeB = b.split(',')[3];
+      return timeB.localeCompare(timeA);
+    });
+
+    const csv = csvHeader + allRows.join('\n');
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="all-leads.csv"');
