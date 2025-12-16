@@ -83,7 +83,78 @@ function getClientIp(req: Request): string | undefined {
 }
 
 // ============================================
-// Serve Landing Page
+// Get Landing Page Data (JSON API)
+// ============================================
+
+export async function getLandingPageData(
+  req: Request,
+  res: Response<ApiResponse<{ leadMagnet: Partial<ILeadMagnet>; brandSettings: IBrandSettings }>>,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { username, slug } = req.params;
+
+    if (!username || !slug) {
+      throw AppError.notFound('Page not found');
+    }
+
+    // Find user by username
+    const user = await User.findOne({ username: username.toLowerCase() });
+    if (!user) {
+      throw AppError.notFound('Page not found');
+    }
+
+    // Find lead magnet
+    const leadMagnet = await LeadMagnet.findOne({
+      userId: user._id,
+      slug: slug.toLowerCase(),
+      isPublished: true,
+    });
+
+    if (!leadMagnet) {
+      throw AppError.notFound('Page not found');
+    }
+
+    // Track page view (async, don't block response)
+    const sourceInfo = detectSource(req);
+    PageView.create({
+      leadMagnetId: leadMagnet._id,
+      referrer: sourceInfo.referrer,
+      source: sourceInfo.source,
+      medium: sourceInfo.medium,
+      campaign: sourceInfo.campaign,
+      userAgent: req.headers['user-agent'],
+      ip: getClientIp(req),
+    }).catch((err) => {
+      logger.error('Failed to track page view', err);
+    });
+
+    // Return data for frontend rendering
+    const leadMagnetData = {
+      _id: leadMagnet._id,
+      title: leadMagnet.title,
+      slug: leadMagnet.slug,
+      type: leadMagnet.type,
+      landingPageCopyJson: leadMagnet.landingPageCopyJson,
+      template: leadMagnet.template,
+    };
+
+    const brandSettings = user.brandSettings || DEFAULT_BRAND_SETTINGS;
+
+    res.json({
+      success: true,
+      data: {
+        leadMagnet: leadMagnetData,
+        brandSettings,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ============================================
+// Serve Landing Page (Legacy HTML rendering)
 // ============================================
 
 export async function serveLandingPage(
