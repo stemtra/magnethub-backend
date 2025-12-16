@@ -10,7 +10,7 @@ import { renderLandingPage, DEFAULT_BRAND_SETTINGS } from '../services/templateS
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import { Brand } from '../models/Brand.js';
-import type { ApiResponse, IEmail, ILandingPageCopy } from '../types/index.js';
+import type { ApiResponse, IEmail, ILandingPageCopy, ILeadMagnet, IBrandSettings } from '../types/index.js';
 
 // ============================================
 // Traffic Source Detection
@@ -136,7 +136,6 @@ export async function getLandingPageData(
       slug: leadMagnet.slug,
       type: leadMagnet.type,
       landingPageCopyJson: leadMagnet.landingPageCopyJson,
-      template: leadMagnet.template,
     };
 
     const brandSettings = user.brandSettings || DEFAULT_BRAND_SETTINGS;
