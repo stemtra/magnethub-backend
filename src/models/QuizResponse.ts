@@ -126,7 +126,14 @@ const quizResponseSchema = new Schema<IQuizResponse>(
 // ============================================
 
 // Compound index to prevent duplicate emails per quiz
-quizResponseSchema.index({ email: 1, quizId: 1 }, { unique: true, sparse: true });
+quizResponseSchema.index(
+  { quizId: 1, email: 1 },
+  {
+    unique: true,
+    sparse: true,
+    partialFilterExpression: { email: { $exists: true, $ne: '' } }
+  }
+);
 quizResponseSchema.index({ quizId: 1, createdAt: -1 });
 quizResponseSchema.index({ resultId: 1 });
 quizResponseSchema.index({ source: 1 });

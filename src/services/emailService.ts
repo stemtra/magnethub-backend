@@ -356,7 +356,7 @@ Thanks for taking the quiz!
 
   try {
     await mg.messages.create(config.mailgun.domain, {
-      from: config.mailgun.fromEmail,
+      from: 'MagnetHub AI <hello@magnethubai.com>',
       to,
       subject,
       text: textBody,

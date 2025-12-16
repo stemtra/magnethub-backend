@@ -2,6 +2,8 @@ import type { Response, NextFunction } from 'express';
 import { LeadMagnet } from '../models/LeadMagnet.js';
 import { Lead } from '../models/Lead.js';
 import { PageView } from '../models/PageView.js';
+import { Quiz } from '../models/Quiz.js';
+import { QuizResponse } from '../models/QuizResponse.js';
 import { AppError } from '../utils/AppError.js';
 import type { AuthenticatedRequest, ApiResponse } from '../types/index.js';
 
@@ -95,7 +97,11 @@ export async function getOverview(
     const leadMagnets = await LeadMagnet.find({ userId: req.user._id }).select('_id');
     const leadMagnetIds = leadMagnets.map((lm) => lm._id);
 
-    if (leadMagnetIds.length === 0) {
+    // Get all user's quizzes
+    const quizzes = await Quiz.find({ userId: req.user._id }).select('_id stats');
+    const quizIds = quizzes.map((q) => q._id);
+
+    if (leadMagnetIds.length === 0 && quizIds.length === 0) {
       res.json({
         success: true,
         data: {
@@ -127,6 +133,12 @@ export async function getOverview(
       viewsThisWeek,
       leadsThisWeek,
       leadsLast30Days,
+      // Quiz-specific queries
+      quizViewsToday,
+      quizViewsWeek,
+      quizEmailCapturesToday,
+      quizEmailCapturesWeek,
+      quizEmailCapturesLast30Days,
     ] = await Promise.all([
       PageView.countDocuments({ leadMagnetId: { $in: leadMagnetIds } }),
       Lead.countDocuments({ leadMagnetId: { $in: leadMagnetIds } }),
@@ -150,22 +162,62 @@ export async function getOverview(
         leadMagnetId: { $in: leadMagnetIds },
         createdAt: { $gte: thirtyDaysAgo },
       }),
+      // Quiz views (starts)
+      QuizResponse.countDocuments({
+        quizId: { $in: quizIds },
+        startedAt: { $exists: true },
+        createdAt: { $gte: today },
+      }),
+      QuizResponse.countDocuments({
+        quizId: { $in: quizIds },
+        startedAt: { $exists: true },
+        createdAt: { $gte: weekStart },
+      }),
+      // Quiz email captures
+      QuizResponse.countDocuments({
+        quizId: { $in: quizIds },
+        email: { $exists: true, $ne: '' },
+        createdAt: { $gte: today },
+      }),
+      QuizResponse.countDocuments({
+        quizId: { $in: quizIds },
+        email: { $exists: true, $ne: '' },
+        createdAt: { $gte: weekStart },
+      }),
+      QuizResponse.countDocuments({
+        quizId: { $in: quizIds },
+        email: { $exists: true, $ne: '' },
+        createdAt: { $gte: thirtyDaysAgo },
+      }),
     ]);
 
-    const conversionRate = totalViews > 0 ? (totalLeads / totalViews) * 100 : 0;
-    const avgLeadsPerDay = leadsLast30Days / 30;
+    // Aggregate quiz views from quiz stats
+    const quizTotalViews = quizzes.reduce((sum, quiz) => sum + (quiz.stats?.views || 0), 0);
+    const quizTotalEmailCaptures = quizzes.reduce((sum, quiz) => sum + (quiz.stats?.emailsCaptured || 0), 0);
+
+    // Combine lead magnet and quiz metrics
+    const combinedTotalViews = totalViews + quizTotalViews;
+    const combinedTotalLeads = totalLeads + quizTotalEmailCaptures;
+    const combinedViewsToday = viewsToday + quizViewsToday;
+    const combinedLeadsToday = leadsToday + quizEmailCapturesToday;
+    const combinedViewsThisWeek = viewsThisWeek + quizViewsWeek;
+    const combinedLeadsThisWeek = leadsThisWeek + quizEmailCapturesWeek;
+    const combinedLeadsLast30Days = leadsLast30Days + quizEmailCapturesLast30Days;
+
+    const conversionRate = combinedTotalViews > 0 ? (combinedTotalLeads / combinedTotalViews) * 100 : 0;
+    const avgLeadsPerDay = combinedLeadsLast30Days / 30;
 
     res.json({
       success: true,
       data: {
         stats: {
-          totalViews,
-          totalLeads,
+          totalViews: combinedTotalViews,
+          totalLeads: combinedTotalLeads,
           conversionRate: Math.round(conversionRate * 100) / 100,
-          viewsToday,
-          leadsToday,
-          viewsThisWeek,
-          leadsThisWeek,
+          viewsToday: combinedViewsToday,
+          leadsToday: combinedLeadsToday,
+          viewsThisWeek: combinedViewsThisWeek,
+          leadsThisWeek: combinedLeadsThisWeek,
           avgLeadsPerDay: Math.round(avgLeadsPerDay * 100) / 100,
         },
       },
@@ -195,12 +247,15 @@ export async function getTimeSeries(
     const leadMagnets = await LeadMagnet.find({ userId: req.user._id }).select('_id');
     const leadMagnetIds = leadMagnets.map((lm) => lm._id);
 
-    if (leadMagnetIds.length === 0) {
+    const quizzes = await Quiz.find({ userId: req.user._id }).select('_id');
+    const quizIds = quizzes.map((q) => q._id);
+
+    if (leadMagnetIds.length === 0 && quizIds.length === 0) {
       res.json({ success: true, data: { timeSeries: [] } });
       return;
     }
 
-    // Aggregate views by day
+    // Aggregate views by day (lead magnets)
     const viewsAgg = await PageView.aggregate([
       {
         $match: {
@@ -219,7 +274,7 @@ export async function getTimeSeries(
       { $sort: { _id: 1 } },
     ]);
 
-    // Aggregate leads by day
+    // Aggregate leads by day (lead magnets)
     const leadsAgg = await Lead.aggregate([
       {
         $match: {
@@ -238,9 +293,51 @@ export async function getTimeSeries(
       { $sort: { _id: 1 } },
     ]);
 
+    // Aggregate quiz views by day (quiz starts/responses)
+    const quizViewsAgg = await QuizResponse.aggregate([
+      {
+        $match: {
+          quizId: { $in: quizIds },
+          startedAt: { $exists: true },
+          createdAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Aggregate quiz email captures by day
+    const quizLeadsAgg = await QuizResponse.aggregate([
+      {
+        $match: {
+          quizId: { $in: quizIds },
+          email: { $exists: true, $ne: '' },
+          createdAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
     // Create maps for quick lookup
     const viewsMap = new Map(viewsAgg.map((v) => [v._id, v.count]));
     const leadsMap = new Map(leadsAgg.map((l) => [l._id, l.count]));
+    const quizViewsMap = new Map(quizViewsAgg.map((v) => [v._id, v.count]));
+    const quizLeadsMap = new Map(quizLeadsAgg.map((l) => [l._id, l.count]));
 
     // Generate complete time series with all days
     const timeSeries: TimeSeriesPoint[] = [];
@@ -251,8 +348,8 @@ export async function getTimeSeries(
       const dateStr = current.toISOString().split('T')[0];
       timeSeries.push({
         date: dateStr,
-        views: viewsMap.get(dateStr) || 0,
-        leads: leadsMap.get(dateStr) || 0,
+        views: (viewsMap.get(dateStr) || 0) + (quizViewsMap.get(dateStr) || 0),
+        leads: (leadsMap.get(dateStr) || 0) + (quizLeadsMap.get(dateStr) || 0),
       });
       current.setDate(current.getDate() + 1);
     }
@@ -280,21 +377,48 @@ export async function getSourceBreakdown(
     const leadMagnets = await LeadMagnet.find({ userId: req.user._id }).select('_id');
     const leadMagnetIds = leadMagnets.map((lm) => lm._id);
 
-    if (leadMagnetIds.length === 0) {
+    const quizzes = await Quiz.find({ userId: req.user._id }).select('_id');
+    const quizIds = quizzes.map((q) => q._id);
+
+    if (leadMagnetIds.length === 0 && quizIds.length === 0) {
       res.json({ success: true, data: { sources: [] } });
       return;
     }
 
-    // Aggregate views by source
+    // Aggregate views by source (lead magnets)
     const viewsBySource = await PageView.aggregate([
       { $match: { leadMagnetId: { $in: leadMagnetIds } } },
       { $group: { _id: '$source', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]);
 
-    // Aggregate leads by source
+    // Aggregate leads by source (lead magnets)
     const leadsBySource = await Lead.aggregate([
       { $match: { leadMagnetId: { $in: leadMagnetIds } } },
+      { $group: { _id: { $ifNull: ['$source', 'direct'] }, count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Aggregate quiz views by source (quiz starts)
+    const quizViewsBySource = await QuizResponse.aggregate([
+      { 
+        $match: { 
+          quizId: { $in: quizIds },
+          startedAt: { $exists: true },
+        } 
+      },
+      { $group: { _id: { $ifNull: ['$source', 'direct'] }, count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Aggregate quiz leads by source (email captures)
+    const quizLeadsBySource = await QuizResponse.aggregate([
+      { 
+        $match: { 
+          quizId: { $in: quizIds },
+          email: { $exists: true, $ne: '' },
+        } 
+      },
       { $group: { _id: { $ifNull: ['$source', 'direct'] }, count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]);
@@ -302,13 +426,20 @@ export async function getSourceBreakdown(
     // Merge into source breakdown
     const viewsMap = new Map(viewsBySource.map((v) => [v._id, v.count]));
     const leadsMap = new Map(leadsBySource.map((l) => [l._id, l.count]));
+    const quizViewsMap = new Map(quizViewsBySource.map((v) => [v._id, v.count]));
+    const quizLeadsMap = new Map(quizLeadsBySource.map((l) => [l._id, l.count]));
 
-    // Get all unique sources
-    const allSources = new Set([...viewsMap.keys(), ...leadsMap.keys()]);
+    // Get all unique sources from all maps
+    const allSources = new Set([
+      ...viewsMap.keys(),
+      ...leadsMap.keys(),
+      ...quizViewsMap.keys(),
+      ...quizLeadsMap.keys(),
+    ]);
 
     const sources: SourceBreakdown[] = Array.from(allSources).map((source) => {
-      const views = viewsMap.get(source) || 0;
-      const leads = leadsMap.get(source) || 0;
+      const views = (viewsMap.get(source) || 0) + (quizViewsMap.get(source) || 0);
+      const leads = (leadsMap.get(source) || 0) + (quizLeadsMap.get(source) || 0);
       return {
         source: source || 'direct',
         views,
@@ -344,7 +475,11 @@ export async function getFunnelPerformance(
       .select('_id title slug type')
       .lean();
 
-    if (leadMagnets.length === 0) {
+    const quizzes = await Quiz.find({ userId: req.user._id })
+      .select('_id title slug stats')
+      .lean();
+
+    if (leadMagnets.length === 0 && quizzes.length === 0) {
       res.json({ success: true, data: { funnels: [] } });
       return;
     }
@@ -366,7 +501,8 @@ export async function getFunnelPerformance(
     const viewsMap = new Map(viewsByMagnet.map((v) => [v._id.toString(), v.count]));
     const leadsMap = new Map(leadsByMagnet.map((l) => [l._id.toString(), l.count]));
 
-    const funnels: FunnelPerformance[] = leadMagnets.map((lm) => {
+    // Map lead magnets to funnel performance
+    const leadMagnetFunnels: FunnelPerformance[] = leadMagnets.map((lm) => {
       const id = lm._id.toString();
       const views = viewsMap.get(id) || 0;
       const leads = leadsMap.get(id) || 0;
@@ -380,6 +516,24 @@ export async function getFunnelPerformance(
         conversionRate: views > 0 ? Math.round((leads / views) * 10000) / 100 : 0,
       };
     });
+
+    // Map quizzes to funnel performance
+    const quizFunnels: FunnelPerformance[] = quizzes.map((quiz) => {
+      const views = quiz.stats?.views || 0;
+      const leads = quiz.stats?.emailsCaptured || 0;
+      return {
+        id: quiz._id.toString(),
+        title: quiz.title || 'Untitled Quiz',
+        slug: quiz.slug,
+        type: 'quiz',
+        views,
+        leads,
+        conversionRate: views > 0 ? Math.round((leads / views) * 10000) / 100 : 0,
+      };
+    });
+
+    // Combine both types of funnels
+    const funnels = [...leadMagnetFunnels, ...quizFunnels];
 
     // Sort by leads (best performers first)
     funnels.sort((a, b) => b.leads - a.leads);
@@ -410,26 +564,53 @@ export async function getRecentActivity(
       .select('_id title')
       .lean();
 
-    if (leadMagnets.length === 0) {
+    const quizzes = await Quiz.find({ userId: req.user._id })
+      .select('_id title')
+      .lean();
+
+    if (leadMagnets.length === 0 && quizzes.length === 0) {
       res.json({ success: true, data: { activities: [] } });
       return;
     }
 
     const leadMagnetIds = leadMagnets.map((lm) => lm._id);
+    const quizIds = quizzes.map((q) => q._id);
+    
     const titleMap = new Map(leadMagnets.map((lm) => [lm._id.toString(), lm.title || 'Untitled']));
+    const quizTitleMap = new Map(quizzes.map((q) => [q._id.toString(), q.title || 'Untitled Quiz']));
 
-    // Get recent leads
+    // Get recent leads (lead magnets)
     const recentLeads = await Lead.find({ leadMagnetId: { $in: leadMagnetIds } })
       .sort({ createdAt: -1 })
       .limit(limit)
       .select('email source leadMagnetId createdAt')
       .lean();
 
-    // Get recent views
+    // Get recent views (lead magnets)
     const recentViews = await PageView.find({ leadMagnetId: { $in: leadMagnetIds } })
       .sort({ createdAt: -1 })
       .limit(limit)
       .select('source leadMagnetId createdAt')
+      .lean();
+
+    // Get recent quiz email captures
+    const recentQuizLeads = await QuizResponse.find({ 
+      quizId: { $in: quizIds },
+      email: { $exists: true, $ne: '' },
+    })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .select('email source quizId createdAt emailCapturedAt')
+      .lean();
+
+    // Get recent quiz views (starts)
+    const recentQuizViews = await QuizResponse.find({ 
+      quizId: { $in: quizIds },
+      startedAt: { $exists: true },
+    })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .select('source quizId createdAt')
       .lean();
 
     // Combine and sort
@@ -446,6 +627,19 @@ export async function getRecentActivity(
         source: view.source,
         leadMagnetTitle: titleMap.get(view.leadMagnetId.toString()) || 'Unknown',
         createdAt: view.createdAt,
+      })),
+      ...recentQuizLeads.map((quizLead) => ({
+        type: 'lead' as const,
+        source: quizLead.source || 'direct',
+        leadMagnetTitle: quizTitleMap.get(quizLead.quizId.toString()) || 'Unknown Quiz',
+        email: quizLead.email,
+        createdAt: quizLead.emailCapturedAt || quizLead.createdAt,
+      })),
+      ...recentQuizViews.map((quizView) => ({
+        type: 'view' as const,
+        source: quizView.source || 'direct',
+        leadMagnetTitle: quizTitleMap.get(quizView.quizId.toString()) || 'Unknown Quiz',
+        createdAt: quizView.createdAt,
       })),
     ];
 
