@@ -135,6 +135,21 @@ router.use((req, _res, next) => {
 });
 
 // ============================================
+// Tenant Validation
+// ============================================
+
+/**
+ * GET /tenant/validate
+ * Validate that the current subdomain tenant exists
+ */
+router.get('/tenant/validate', (req, res, next) => {
+  const username = (req as PublicSubdomainRequest)._publicUsername;
+  if (!username) return next();
+  (req.params as Record<string, string>).slug = username;
+  return publicController.getTenantBySlug(req, res, next);
+});
+
+// ============================================
 // Quiz Routes (must be before :slug to avoid conflicts)
 // ============================================
 
