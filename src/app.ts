@@ -15,6 +15,7 @@ import passport from './config/passport.js';
 import authRoutes from './routes/auth.js';
 import brandRoutes from './routes/brands.js';
 import leadMagnetRoutes from './routes/leadMagnets.js';
+import quizRoutes from './routes/quizzes.js';
 import publicRoutes from './routes/public.js';
 import publicSubdomainRoutes from './routes/publicSubdomain.js';
 import analyticsRoutes from './routes/analytics.js';
@@ -130,6 +131,7 @@ app.get('/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/brands', brandRoutes);
 app.use('/api/lead-magnets', leadMagnetRoutes);
+app.use('/api/quizzes', quizRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/sentry', sentryRoutes);

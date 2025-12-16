@@ -206,6 +206,134 @@ export interface IPageView extends Document {
 }
 
 // ============================================
+// Quiz Types
+// ============================================
+
+export type QuizStatus = 'draft' | 'published';
+export type EmailCapturePoint = 'before_results' | 'after_results';
+export type QuizTheme = 'dark' | 'light' | 'colorful';
+export type QuizFontStyle = 'modern' | 'classic' | 'playful';
+export type QuizEmailDeliveryStatus = 'pending' | 'sent' | 'failed' | 'skipped';
+
+export interface IQuizAnswer {
+  _id: Types.ObjectId;
+  answerText: string;
+  resultMapping?: Types.ObjectId; // Maps to which result this points to
+}
+
+export interface IQuizQuestion {
+  _id: Types.ObjectId;
+  questionText: string;
+  order: number;
+  answers: IQuizAnswer[];
+}
+
+export interface IQuizResult {
+  _id: Types.ObjectId;
+  name: string;
+  emoji?: string;
+  summary: string;
+  traits: string[];
+  recommendation?: string;
+  ctaText?: string;
+  ctaUrl?: string;
+  imageUrl?: string;
+}
+
+export interface IQuizEmailFields {
+  requireEmail: boolean;
+  requireName: boolean;
+  requirePhone: boolean;
+}
+
+export interface IQuizStats {
+  views: number;
+  starts: number;
+  completions: number;
+  emailsCaptured: number;
+}
+
+export interface IQuiz extends Document {
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
+  brandId?: Types.ObjectId;
+  title: string;
+  subtitle?: string;
+  coverImageUrl?: string;
+  slug: string;
+
+  // Email capture settings
+  emailCapturePoint: EmailCapturePoint;
+  emailFields: IQuizEmailFields;
+  privacyText?: string;
+
+  // Questions and Results
+  questions: IQuizQuestion[];
+  results: IQuizResult[];
+
+  // Styling
+  theme: QuizTheme;
+  primaryColor: string;
+  accentColor: string;
+  logoUrl?: string;
+  fontStyle: QuizFontStyle;
+
+  // Analytics
+  stats: IQuizStats;
+
+  // Status
+  status: QuizStatus;
+
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ============================================
+// QuizResponse Types
+// ============================================
+
+export interface IQuizResponseAnswer {
+  questionId: Types.ObjectId;
+  answerId: Types.ObjectId;
+  timestamp: Date;
+}
+
+export interface IQuizResponse extends Document {
+  _id: Types.ObjectId;
+  quizId: Types.ObjectId;
+
+  // User info
+  email?: string;
+  firstName?: string;
+  phone?: string;
+
+  // Quiz data
+  answers: IQuizResponseAnswer[];
+  resultId?: Types.ObjectId;
+
+  // Timestamps
+  startedAt?: Date;
+  completedAt?: Date;
+  emailCapturedAt?: Date;
+
+  // Technical metadata
+  ipAddress?: string;
+  userAgent?: string;
+
+  // Source tracking
+  referrer?: string;
+  source?: string;
+  medium?: string;
+  campaign?: string;
+
+  // Email delivery
+  emailDeliveryStatus: QuizEmailDeliveryStatus;
+
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
+// ============================================
 // Instagram Profile Types
 // ============================================
 

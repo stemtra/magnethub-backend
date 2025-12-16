@@ -3,6 +3,7 @@ import { Router } from 'express';
 import express from 'express';
 import { config } from '../config/index.js';
 import * as publicController from '../controllers/publicController.js';
+import * as publicQuizController from '../controllers/publicQuizController.js';
 
 const router: Router = Router();
 
@@ -132,6 +133,47 @@ router.use((req, _res, next) => {
   (req as PublicSubdomainRequest)._publicHostname = hostname;
   return next();
 });
+
+// ============================================
+// Quiz Routes (must be before :slug to avoid conflicts)
+// ============================================
+
+/**
+ * GET /quiz/:slug
+ * Get published quiz data (JSON for frontend rendering)
+ */
+router.get('/quiz/:slug', (req, res, next) => {
+  const username = (req as PublicSubdomainRequest)._publicUsername;
+  if (!username) return next();
+  (req.params as Record<string, string>).username = username;
+  return publicQuizController.getQuiz(req, res, next);
+});
+
+/**
+ * POST /quiz/:slug/start
+ * Record quiz start and get session ID
+ */
+router.post('/quiz/:slug/start', (req, res, next) => {
+  const username = (req as PublicSubdomainRequest)._publicUsername;
+  if (!username) return next();
+  (req.params as Record<string, string>).username = username;
+  return publicQuizController.startQuiz(req, res, next);
+});
+
+/**
+ * POST /quiz/:slug/submit
+ * Submit quiz answers and email, get result
+ */
+router.post('/quiz/:slug/submit', (req, res, next) => {
+  const username = (req as PublicSubdomainRequest)._publicUsername;
+  if (!username) return next();
+  (req.params as Record<string, string>).username = username;
+  return publicQuizController.submitQuiz(req, res, next);
+});
+
+// ============================================
+// Lead Magnet Routes
+// ============================================
 
 /**
  * GET /:slug
