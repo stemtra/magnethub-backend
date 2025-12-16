@@ -24,8 +24,14 @@ router.post('/:username/quiz/:slug/start', publicQuizController.startQuiz);
 router.post('/:username/quiz/:slug/submit', quizSubmitLimiter, publicQuizController.submitQuiz);
 
 /**
+ * GET /public/:username/:slug/data
+ * Get lead magnet landing page data as JSON (for frontend rendering)
+ */
+router.get('/:username/:slug/data', publicController.getLandingPageData);
+
+/**
  * GET /public/:username/:slug
- * Serve the published landing page
+ * Serve the published landing page (legacy HTML rendering)
  */
 router.get('/:username/:slug', publicController.serveLandingPage);
 

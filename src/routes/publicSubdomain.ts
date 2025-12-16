@@ -176,8 +176,19 @@ router.post('/quiz/:slug/submit', (req, res, next) => {
 // ============================================
 
 /**
+ * GET /:slug/data
+ * Get lead magnet landing page data as JSON (for frontend rendering)
+ */
+router.get('/:slug/data', (req, res, next) => {
+  const username = (req as PublicSubdomainRequest)._publicUsername;
+  if (!username) return next();
+  (req.params as Record<string, string>).username = username;
+  return publicController.getLandingPageData(req, res, next);
+});
+
+/**
  * GET /:slug
- * Serve the published landing page on username subdomain
+ * Serve the published landing page on username subdomain (legacy HTML rendering)
  */
 router.get('/:slug', (req, res, next) => {
   const username = (req as PublicSubdomainRequest)._publicUsername;
