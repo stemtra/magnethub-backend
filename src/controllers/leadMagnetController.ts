@@ -493,7 +493,7 @@ interface LeadWithMagnet {
   id: string;
   email: string;
   leadMagnetId: string;
-  deliveryStatus: 'pending' | 'sent' | 'failed';
+  deliveryStatus: 'pending' | 'sent' | 'failed' | 'skipped';
   createdAt: Date;
   leadMagnet?: {
     id: string;

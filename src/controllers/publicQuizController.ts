@@ -132,7 +132,7 @@ export async function getQuiz(
 
     // Return quiz data for frontend rendering
     // Exclude internal fields like stats
-    const quizData: Partial<IQuiz> = {
+    const quizData: Partial<IQuiz> & { brandInfo?: { sourceType: string; sourceUrl: string; name: string } | null } = {
       _id: quiz._id,
       title: quiz.title,
       subtitle: quiz.subtitle,
