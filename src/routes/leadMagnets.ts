@@ -56,6 +56,28 @@ const idParamSchema = z.object({
   id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ID format'),
 });
 
+// New unified generation schema (topic-based)
+const generateUnifiedSchema = z.object({
+  brandId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid brand ID'),
+  topic: z.string().min(3, 'Topic must be at least 3 characters').max(500, 'Topic too long'),
+  type: z.enum(['quiz', 'guide', 'checklist', 'mistakes', 'blueprint', 'swipefile', 'cheatsheet', 'casestudy', 'infographic']),
+  // Quiz-specific fields
+  numQuestions: z.number().int().min(3).max(20).optional(),
+  numResults: z.number().int().min(2).max(8).optional(),
+}).refine(
+  (data) => {
+    // If quiz, require numQuestions and numResults
+    if (data.type === 'quiz') {
+      return data.numQuestions !== undefined && data.numResults !== undefined;
+    }
+    return true;
+  },
+  {
+    message: 'numQuestions and numResults are required for quiz type',
+    path: ['type'],
+  }
+);
+
 // ============================================
 // Routes
 // ============================================
@@ -64,8 +86,14 @@ const idParamSchema = z.object({
 router.use(isAuthenticated);
 
 /**
+ * POST /api/lead-magnets/generate-unified
+ * Generate a new lead magnet (unified topic-based flow)
+ */
+router.post('/generate-unified', requireBillingHealthy, checkGenerationLimit, validateBody(generateUnifiedSchema), leadMagnetController.generateUnified);
+
+/**
  * POST /api/lead-magnets/generate
- * Generate a new lead magnet
+ * Generate a new lead magnet (legacy URL-based flow)
  */
 router.post('/generate', requireBillingHealthy, checkGenerationLimit, validateBody(generateSchema), leadMagnetController.generate);
 

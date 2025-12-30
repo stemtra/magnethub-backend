@@ -234,7 +234,7 @@ export async function sendQuizResultEmail(params: QuizResultEmailParams): Promis
   // Plain text version
   const textBody = `${greeting},
 
-Thanks for taking my "${quiz.title}"!
+Thanks for taking "${quiz.title}"!
 
 Based on your answers, you're a ${result.name}${result.emoji ? ` ${result.emoji}` : ''}.
 

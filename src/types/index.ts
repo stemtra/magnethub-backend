@@ -118,6 +118,12 @@ export interface IBrand extends Document {
   sourceUrl: string;
   settings: IBrandSettings;
   isDefault: boolean;
+  brandVoice?: string;
+  targetAudience?: string;
+  keyMessages?: string[];
+  scrapedContent?: string;
+  scrapedAt?: Date;
+  isScraped: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
