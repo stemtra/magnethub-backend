@@ -2,9 +2,11 @@ import type { Response, NextFunction } from 'express';
 import slugify from 'slugify';
 import { v4 as uuidv4 } from 'uuid';
 import { LeadMagnet } from '../models/LeadMagnet.js';
+import { Quiz } from '../models/Quiz.js';
 import { Lead } from '../models/Lead.js';
 import { Brand } from '../models/Brand.js';
 import { runPipelineToContent, generateLandingPageCopy, generateEmailSequence } from '../services/aiService.js';
+import { generateQuiz } from '../services/quizGenerationService.js';
 import { generatePdf } from '../services/pdfService.js';
 import { uploadPdf, getSignedPdfUrl } from '../services/storageService.js';
 import { renderLandingPage } from '../services/templateService.js';
@@ -14,7 +16,7 @@ import { isInstagramUrl, extractUsername, normalizeInstagramUrl } from '../servi
 import { isYouTubeUrl, extractYouTubeHandle, normalizeYouTubeUrl } from '../services/youtubeService.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
-import type { AuthenticatedRequest, ApiResponse, ILeadMagnet, IBrandSettings, SourceType, IBrand } from '../types/index.js';
+import type { AuthenticatedRequest, ApiResponse, ILeadMagnet, IQuiz, IBrandSettings, SourceType, IBrand } from '../types/index.js';
 
 async function attachSignedPdfUrl<T extends { pdfUrl?: string }>(
   leadMagnet: T
@@ -34,7 +36,136 @@ async function attachSignedPdfUrl<T extends { pdfUrl?: string }>(
 }
 
 // ============================================
-// Generate Lead Magnet
+// Generate Lead Magnet (New Unified Flow)
+// ============================================
+
+export async function generateUnified(
+  req: AuthenticatedRequest,
+  res: Response<ApiResponse<{ leadMagnet?: ILeadMagnet; quiz?: IQuiz }>>,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw AppError.unauthorized();
+    }
+
+    const { brandId, topic, type, numQuestions, numResults } = req.body;
+
+    // Validate required fields
+    if (!brandId) {
+      throw AppError.badRequest('Brand ID is required');
+    }
+    if (!topic) {
+      throw AppError.badRequest('Topic is required');
+    }
+    if (!type) {
+      throw AppError.badRequest('Lead magnet type is required');
+    }
+
+    // Get brand
+    const brand = await Brand.findOne({ _id: brandId, userId: req.user._id });
+    if (!brand) {
+      throw AppError.badRequest('Brand not found');
+    }
+
+    logger.info('Starting unified lead magnet generation', {
+      userId: req.user._id,
+      brandId: brand._id,
+      type,
+      topic,
+    });
+
+    // Branch based on type
+    if (type === 'quiz') {
+      // ============================================
+      // QUIZ GENERATION PATH
+      // ============================================
+      
+      const quizNumQuestions = numQuestions || 10;
+      const quizNumResults = numResults || 4;
+
+      // Generate quiz content
+      const generatedQuiz = await generateQuiz({
+        topic,
+        brand,
+        numQuestions: quizNumQuestions,
+        numResults: quizNumResults,
+      });
+
+      // Generate unique slug
+      const baseSlug = slugify(topic, { lower: true, strict: true });
+      let slug = baseSlug;
+      let counter = 1;
+      while (await Quiz.findOne({ userId: req.user._id, slug })) {
+        slug = `${baseSlug}-${counter}`;
+        counter++;
+      }
+
+      // Map generated quiz to Quiz model structure
+      const quiz = await Quiz.create({
+        userId: req.user._id,
+        brandId: brand._id,
+        title: generatedQuiz.title,
+        subtitle: generatedQuiz.subtitle,
+        slug,
+        questions: generatedQuiz.questions.map((q, idx) => ({
+          questionText: q.questionText,
+          order: idx,
+          answers: q.answers.map(a => ({
+            answerText: a.answerText,
+            resultMapping: generatedQuiz.results[a.resultIndex]?._id, // Will be set after results created
+          })),
+        })),
+        results: generatedQuiz.results.map(r => ({
+          name: r.name,
+          emoji: r.emoji,
+          summary: r.summary,
+          traits: r.traits,
+          recommendation: r.recommendation,
+        })),
+        primaryColor: brand.settings.primaryColor,
+        accentColor: brand.settings.accentColor,
+        logoUrl: brand.settings.logoUrl,
+        theme: brand.settings.theme === 'dark' ? 'dark' : 'light',
+        status: 'published',
+      });
+
+      // Map result IDs back to answers
+      quiz.questions.forEach((question, qIdx) => {
+        question.answers.forEach((answer, aIdx) => {
+          const originalAnswer = generatedQuiz.questions[qIdx].answers[aIdx];
+          answer.resultMapping = quiz.results[originalAnswer.resultIndex]._id;
+        });
+      });
+      await quiz.save();
+
+      // Record usage for billing
+      await billingService.recordLeadMagnetUsage(req.user._id.toString());
+
+      logger.info('Quiz generated successfully', {
+        userId: req.user._id,
+        quizId: quiz._id,
+        slug: quiz.slug,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: { quiz },
+      });
+    } else {
+      // ============================================
+      // OTHER LEAD MAGNET TYPES (Coming Soon)
+      // ============================================
+      
+      throw AppError.badRequest(`Lead magnet type "${type}" is not yet supported. Only "quiz" is available.`);
+    }
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ============================================
+// Generate Lead Magnet (Legacy Flow)
 // ============================================
 
 export async function generate(

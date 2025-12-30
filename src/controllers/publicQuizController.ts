@@ -377,6 +377,9 @@ export async function submitQuiz(
       emailDeliveryStatus: email ? 'pending' : 'skipped',
     };
 
+    // Track if this is a new email capture
+    const isNewEmailCapture = email && (!response || !response.email);
+
     if (response) {
       // Update existing session
       Object.assign(response, responseData);
@@ -396,11 +399,11 @@ export async function submitQuiz(
       });
     }
 
-    // Update quiz stats
+    // Update quiz stats - only increment emailsCaptured if it's a NEW email
     const statsUpdate: Record<string, number> = {
       'stats.completions': 1,
     };
-    if (email) {
+    if (isNewEmailCapture) {
       statsUpdate['stats.emailsCaptured'] = 1;
     }
     await Quiz.updateOne({ _id: quiz._id }, { $inc: statsUpdate });

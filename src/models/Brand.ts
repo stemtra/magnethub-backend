@@ -59,6 +59,37 @@ const brandSchema = new Schema<IBrand>(
       type: Boolean,
       default: false,
     },
+    brandVoice: {
+      type: String,
+      trim: true,
+      maxlength: [1000, 'Brand voice cannot exceed 1000 characters'],
+    },
+    targetAudience: {
+      type: String,
+      trim: true,
+      maxlength: [1000, 'Target audience cannot exceed 1000 characters'],
+    },
+    keyMessages: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: function(v: string[]) {
+          return v.length <= 10;
+        },
+        message: 'Cannot have more than 10 key messages',
+      },
+    },
+    scrapedContent: {
+      type: String,
+      trim: true,
+    },
+    scrapedAt: {
+      type: Date,
+    },
+    isScraped: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

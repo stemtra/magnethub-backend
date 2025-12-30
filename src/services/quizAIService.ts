@@ -46,7 +46,6 @@ export interface GeneratedResult {
   summary: string;
   traits: string[];
   recommendation: string;
-  suggestedCTA: string;
 }
 
 export interface QuizResultsOutput {
@@ -145,25 +144,41 @@ export async function generateQuizQuestions(
 ): Promise<QuizQuestionsOutput> {
   logger.info('Generating quiz questions', { input });
 
+  const quizTitleContext = input.quizTitle 
+    ? `\n\nIMPORTANT: The quiz title is "${input.quizTitle}". ALL questions must be directly related to this specific topic/theme. Analyze the title to understand what domain this quiz is about (e.g., sports, food, work style, personality traits, etc.) and create questions that make sense for that topic.` 
+    : '';
+
+  const nicheInfo = input.niche && input.niche !== 'general' 
+    ? `\n- Niche/Industry: ${input.niche}` 
+    : '';
+
   const systemPrompt = `You are an expert quiz designer specializing in personality quizzes that engage users and provide valuable insights.
 
-Generate ${input.questionCount} multiple-choice questions for a personality quiz.
+Generate ${input.questionCount} multiple-choice questions for a personality quiz.${quizTitleContext}
 
 Context:
 - Audience: ${input.audience}
-- Goal: Help them ${input.goal}
-- Niche: ${input.niche}
-${input.quizTitle ? `- Quiz Title: ${input.quizTitle}` : ''}
+- Goal: Help them ${input.goal}${nicheInfo}
+${input.quizTitle ? `- Quiz Title: "${input.quizTitle}"` : ''}
 
 Requirements:
 - Each question should have exactly 4 answer options
-- Questions should be engaging, not generic
-- Answers should be distinct personality/preference indicators
-- Vary question types (preferences, habits, goals, challenges, scenarios)
-- Use conversational, friendly tone
+- Questions MUST be specific and relevant to the quiz title's topic (not generic)
+- Questions should be engaging and feel natural for this specific quiz topic
+- Answers should be distinct personality/preference indicators within the topic's domain
+- Vary question types (preferences, habits, goals, challenges, scenarios) while staying on-topic
+- Use conversational, friendly tone appropriate for the topic
 - Questions should take 30 seconds or less to answer
 - Avoid yes/no questions - make each answer reveal something about personality
 - Make answers roughly equal in appeal (no obviously "right" answers)
+- Use terminology and examples specific to the quiz's subject matter
+
+${input.quizTitle ? `
+For example:
+- If the quiz is about paddle/tennis playing style, ask about game strategies, preferred positions, match approaches
+- If the quiz is about coffee preferences, ask about brewing methods, flavor preferences, drinking habits  
+- If the quiz is about leadership style, ask about decision-making, team management, conflict resolution
+` : ''}
 
 Return as JSON:
 {
@@ -180,12 +195,13 @@ Return as JSON:
   ]
 }`;
 
-  const userPrompt = `Create ${input.questionCount} engaging personality quiz questions for:
-Audience: ${input.audience}
-Goal: ${input.goal}
-Niche: ${input.niche}
+  const userPrompt = `Create ${input.questionCount} engaging personality quiz questions${input.quizTitle ? ` specifically for: "${input.quizTitle}"` : ''}
 
-Make sure questions reveal personality traits that can map to distinct result types.`;
+Context:
+- Audience: ${input.audience}
+- Goal: ${input.goal}${nicheInfo}
+
+${input.quizTitle ? `Analyze the quiz title carefully. What specific topic/domain is this quiz about? Create questions that are directly relevant to that topic and will help categorize people into distinct types related to this subject.` : 'Make sure questions reveal personality traits that can map to distinct result types.'}`;
 
   return callOpenAI<QuizQuestionsOutput>(systemPrompt, userPrompt, MAX_RETRIES, {
     maxOutputTokens: 4000,
@@ -208,44 +224,59 @@ export async function generateQuizResults(
     .map((q, i) => `${i + 1}. ${q.questionText}\n   Options: ${q.answers.join(' | ')}`)
     .join('\n');
 
+  const nicheContext = input.niche && input.niche !== 'general' 
+    ? `\nNiche/Industry context: ${input.niche}` 
+    : '';
+
   const systemPrompt = `You are an expert at creating engaging personality quiz results that feel personal and valuable.
 
-Generate ${input.resultCount} distinct personality types for this quiz: "${input.quizTitle}"
+CRITICAL: The quiz title is "${input.quizTitle}". All ${input.resultCount} personality types MUST be directly related to the specific topic/theme of this quiz title. 
+
+Analyze the quiz title carefully to understand:
+- What topic/domain is this quiz about? (e.g., fitness, food, leadership, travel, work style, etc.)
+- What personality aspects should the results categorize?
+- What terminology and examples would resonate with someone interested in this topic?${nicheContext}
 
 Based on these questions:
 ${questionsText}
 
 Each result should:
-1. Have a catchy, relatable name (e.g., "The HIIT Hustler", "The Mindful Mover", "The Weekend Warrior")
-2. Include an appropriate emoji that represents this personality
-3. Have a 2-3 sentence summary that feels personal and validating (use "you" language)
-4. List 4-5 key traits as bullet points
-5. Include a helpful recommendation paragraph
-6. Suggest a relevant call-to-action text
+1. Have a catchy, relatable name that is SPECIFIC to the quiz topic (NOT generic personality types)
+   - Example: If quiz is about "¿Qué tipo de jugador de pádel eres?", results should be paddle/tennis player types like "El Cerebro del Paddock", "El Atacante Imparable"
+   - Example: If quiz is about "What's Your Leadership Style?", results should be leadership types like "The Visionary Leader", "The Strategic Executor"
+   - Example: If quiz is about "What's Your Coffee Personality?", results should be coffee-related like "The Espresso Enthusiast", "The Latte Artist"
+2. Include an emoji that represents this personality within the quiz's topic/theme
+3. Have a 2-3 sentence summary that feels personal and validating (use "you" language) and is relevant to the quiz topic
+4. List 4-5 key traits as bullet points that relate to the quiz topic
+5. Include a helpful recommendation paragraph relevant to the quiz's subject matter
 
-Niche context: ${input.niche}
-
-Make each result distinct and equally appealing - no result should feel like "the bad one".
+IMPORTANT: 
+- DO NOT create generic personality types - they must be specific to the quiz title's topic
+- The result names should sound natural when someone says "I got [Result Name] in the [Quiz Title] quiz"
+- Make each result distinct and equally appealing - no result should feel like "the bad one"
+- Use terminology, examples, and language specific to the quiz's domain/topic
 
 Return as JSON:
 {
   "results": [
     {
-      "name": "The HIIT Hustler",
-      "emoji": "🏋️",
-      "summary": "You thrive on high-intensity workouts that maximize your limited time. You love the endorphin rush and measurable progress that comes from pushing your limits.",
-      "traits": ["Loves quick, intense workouts", "Gets bored with slow routines", "Motivated by visible results", "Thrives under pressure"],
-      "recommendation": "Try my 15-minute HIIT program designed for busy professionals. You'll get maximum results in minimum time, perfect for your go-getter personality.",
-      "suggestedCTA": "Get My Free HIIT Guide"
+      "name": "The Strategic Executor",
+      "emoji": "🎯",
+      "summary": "You approach challenges with careful planning and systematic execution. You believe success comes from preparation and disciplined follow-through.",
+      "traits": ["Plans ahead carefully", "Values structure and organization", "Executes with precision", "Focuses on measurable outcomes", "Thrives with clear roadmaps"],
+      "recommendation": "Your systematic approach is your superpower. Focus on roles and projects where strategic planning and execution drive success."
     }
   ]
 }`;
 
-  const userPrompt = `Create ${input.resultCount} distinct, engaging personality results for:
-Quiz: ${input.quizTitle}
-Niche: ${input.niche}
+  const userPrompt = `Create ${input.resultCount} distinct, engaging personality results that are SPECIFICALLY TAILORED to this quiz topic:
 
-Make each result feel special and valuable to receive.`;
+Quiz Title: "${input.quizTitle}"${nicheContext}
+
+Questions asked:
+${questionsText}
+
+Analyze the quiz title and questions carefully. What is this quiz actually measuring? Create results that make sense as outcomes for THIS specific quiz, not generic personality types.`;
 
   return callOpenAI<QuizResultsOutput>(systemPrompt, userPrompt, MAX_RETRIES, {
     maxOutputTokens: 6000,
@@ -350,7 +381,7 @@ export function convertGeneratedResultsToSchema(
     summary: r.summary,
     traits: r.traits,
     recommendation: r.recommendation,
-    ctaText: r.suggestedCTA,
+    ctaText: undefined,
     ctaUrl: undefined,
     imageUrl: undefined,
   }));
