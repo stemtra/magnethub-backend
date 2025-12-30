@@ -2,6 +2,7 @@ import type { Response, NextFunction } from 'express';
 import { Brand } from '../models/Brand.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
+import { scrapeBrand } from '../services/brandScrapingService.js';
 import type { AuthenticatedRequest, ApiResponse, IBrand, IBrandSettings } from '../types/index.js';
 
 // ============================================
@@ -94,20 +95,58 @@ export async function create(
     const brandCount = await Brand.countDocuments({ userId: req.user._id });
     const shouldBeDefault = isDefault || brandCount === 0;
 
+    // Scrape and analyze the brand source
+    let scrapedData;
+    try {
+      logger.info('Scraping brand source', { sourceUrl, sourceType });
+      scrapedData = await scrapeBrand(sourceUrl, sourceType);
+      logger.info('Brand scraping successful', {
+        hasVoice: !!scrapedData.brandVoice,
+        hasAudience: !!scrapedData.targetAudience,
+        keyMessagesCount: scrapedData.keyMessages.length,
+      });
+    } catch (scrapingError) {
+      // Log error but don't fail brand creation
+      logger.warn('Brand scraping failed, creating brand without scraped data', {
+        error: scrapingError instanceof Error ? scrapingError.message : String(scrapingError),
+        sourceUrl,
+        sourceType,
+      });
+    }
+
+    // Merge scraped settings with provided settings (provided settings take precedence)
+    const finalSettings = scrapedData?.brandSettings 
+      ? { ...scrapedData.brandSettings, ...settings }
+      : settings || {};
+
     const brand = await Brand.create({
       userId: req.user._id,
       name,
+      description: scrapedData?.description,
       sourceType,
       sourceUrl,
-      settings: settings || {},
+      settings: finalSettings,
       isDefault: shouldBeDefault,
+      brandVoice: scrapedData?.brandVoice,
+      targetAudience: scrapedData?.targetAudience,
+      keyMessages: scrapedData?.keyMessages,
+      scrapedContent: scrapedData?.scrapedContent,
+      scrapedAt: scrapedData ? new Date() : undefined,
+      isScraped: !!scrapedData,
     });
+
+    // Update logo if scraped
+    if (scrapedData?.logoUrl && !settings?.logoUrl) {
+      brand.settings.logoUrl = scrapedData.logoUrl;
+      await brand.save();
+    }
 
     logger.info('Brand created', {
       userId: req.user._id,
       brandId: brand._id,
       name,
       sourceType,
+      isScraped: brand.isScraped,
     });
 
     res.status(201).json({
