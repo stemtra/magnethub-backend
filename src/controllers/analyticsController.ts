@@ -173,21 +173,33 @@ export async function getOverview(
         startedAt: { $exists: true },
         createdAt: { $gte: weekStart },
       }),
-      // Quiz email captures
+      // Quiz email captures (use emailCapturedAt if available, fallback to completedAt or createdAt)
       QuizResponse.countDocuments({
         quizId: { $in: quizIds },
         email: { $exists: true, $ne: '' },
-        createdAt: { $gte: today },
+        $or: [
+          { emailCapturedAt: { $gte: today } },
+          { emailCapturedAt: { $exists: false }, completedAt: { $gte: today } },
+          { emailCapturedAt: { $exists: false }, completedAt: { $exists: false }, createdAt: { $gte: today } },
+        ],
       }),
       QuizResponse.countDocuments({
         quizId: { $in: quizIds },
         email: { $exists: true, $ne: '' },
-        createdAt: { $gte: weekStart },
+        $or: [
+          { emailCapturedAt: { $gte: weekStart } },
+          { emailCapturedAt: { $exists: false }, completedAt: { $gte: weekStart } },
+          { emailCapturedAt: { $exists: false }, completedAt: { $exists: false }, createdAt: { $gte: weekStart } },
+        ],
       }),
       QuizResponse.countDocuments({
         quizId: { $in: quizIds },
         email: { $exists: true, $ne: '' },
-        createdAt: { $gte: thirtyDaysAgo },
+        $or: [
+          { emailCapturedAt: { $gte: thirtyDaysAgo } },
+          { emailCapturedAt: { $exists: false }, completedAt: { $gte: thirtyDaysAgo } },
+          { emailCapturedAt: { $exists: false }, completedAt: { $exists: false }, createdAt: { $gte: thirtyDaysAgo } },
+        ],
       }),
     ]);
 
@@ -242,6 +254,7 @@ export async function getTimeSeries(
     }
 
     const days = parseInt(req.query.days as string) || 30;
+    const timezone = (req.query.timezone as string) || 'UTC';
     const startDate = getDaysAgo(days);
 
     const leadMagnets = await LeadMagnet.find({ userId: req.user._id }).select('_id');
@@ -255,7 +268,7 @@ export async function getTimeSeries(
       return;
     }
 
-    // Aggregate views by day (lead magnets)
+    // Aggregate views by day (lead magnets) - use user's timezone
     const viewsAgg = await PageView.aggregate([
       {
         $match: {
@@ -266,7 +279,7 @@ export async function getTimeSeries(
       {
         $group: {
           _id: {
-            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone },
           },
           count: { $sum: 1 },
         },
@@ -274,7 +287,7 @@ export async function getTimeSeries(
       { $sort: { _id: 1 } },
     ]);
 
-    // Aggregate leads by day (lead magnets)
+    // Aggregate leads by day (lead magnets) - use user's timezone
     const leadsAgg = await Lead.aggregate([
       {
         $match: {
@@ -285,7 +298,7 @@ export async function getTimeSeries(
       {
         $group: {
           _id: {
-            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone },
           },
           count: { $sum: 1 },
         },
@@ -293,7 +306,7 @@ export async function getTimeSeries(
       { $sort: { _id: 1 } },
     ]);
 
-    // Aggregate quiz views by day (quiz starts/responses)
+    // Aggregate quiz views by day (quiz starts/responses) - use user's timezone
     const quizViewsAgg = await QuizResponse.aggregate([
       {
         $match: {
@@ -305,7 +318,7 @@ export async function getTimeSeries(
       {
         $group: {
           _id: {
-            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone },
           },
           count: { $sum: 1 },
         },
@@ -313,19 +326,34 @@ export async function getTimeSeries(
       { $sort: { _id: 1 } },
     ]);
 
-    // Aggregate quiz email captures by day
+    // Aggregate quiz email captures by day (use emailCapturedAt, fallback to completedAt or createdAt)
+    // Use user's timezone for accurate date grouping
     const quizLeadsAgg = await QuizResponse.aggregate([
       {
         $match: {
           quizId: { $in: quizIds },
           email: { $exists: true, $ne: '' },
-          createdAt: { $gte: startDate },
+        },
+      },
+      {
+        $addFields: {
+          effectiveEmailDate: {
+            $ifNull: [
+              '$emailCapturedAt',
+              { $ifNull: ['$completedAt', '$createdAt'] }
+            ]
+          }
+        }
+      },
+      {
+        $match: {
+          effectiveEmailDate: { $gte: startDate },
         },
       },
       {
         $group: {
           _id: {
-            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+            $dateToString: { format: '%Y-%m-%d', date: '$effectiveEmailDate', timezone },
           },
           count: { $sum: 1 },
         },
@@ -343,6 +371,8 @@ export async function getTimeSeries(
     const timeSeries: TimeSeriesPoint[] = [];
     const current = new Date(startDate);
     const end = new Date();
+    // Set end to end of today in UTC to ensure we include today's data
+    end.setUTCHours(23, 59, 59, 999);
 
     while (current <= end) {
       const dateStr = current.toISOString().split('T')[0];
@@ -598,9 +628,9 @@ export async function getRecentActivity(
       quizId: { $in: quizIds },
       email: { $exists: true, $ne: '' },
     })
-      .sort({ createdAt: -1 })
+      .sort({ emailCapturedAt: -1, completedAt: -1, createdAt: -1 })
       .limit(limit)
-      .select('email source quizId createdAt emailCapturedAt')
+      .select('email source quizId createdAt completedAt emailCapturedAt')
       .lean();
 
     // Get recent quiz views (starts)
@@ -633,7 +663,7 @@ export async function getRecentActivity(
         source: quizLead.source || 'direct',
         leadMagnetTitle: quizTitleMap.get(quizLead.quizId.toString()) || 'Unknown Quiz',
         email: quizLead.email,
-        createdAt: quizLead.emailCapturedAt || quizLead.createdAt,
+        createdAt: quizLead.emailCapturedAt || quizLead.completedAt || quizLead.createdAt,
       })),
       ...recentQuizViews.map((quizView) => ({
         type: 'view' as const,
