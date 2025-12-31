@@ -7,6 +7,7 @@ import type { Document, Types } from 'mongoose';
 
 export type PlanType = 'free' | 'starter' | 'pro' | 'agency';
 export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'incomplete' | 'trialing';
+export type LeadMagnetPrivacy = 'public' | 'private';
 
 export interface ISubscription extends Document {
   _id: Types.ObjectId;
@@ -84,6 +85,8 @@ export interface IUser extends Document {
   // Stripe
   stripeCustomerId?: string;
   currentSubscriptionId?: Types.ObjectId;
+  // Privacy settings
+  defaultLeadMagnetPrivacy?: LeadMagnetPrivacy;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -140,8 +143,11 @@ export type LeadMagnetType =
   | 'blueprint'
   | 'swipefile'
   | 'cheatsheet'
-  | 'casestudy';
+  | 'casestudy'
+  | 'infographic';
 export type LeadMagnetTone = 'professional' | 'friendly' | 'expert' | 'persuasive';
+export type InfographicStyle = 'minimal' | 'modern' | 'bold' | 'professional';
+export type InfographicOrientation = 'square' | 'portrait' | 'landscape';
 
 export type LeadMagnetGenerationStatus = 'pdf_ready' | 'complete' | 'needs_attention';
 export type LeadMagnetAssetStatus = 'pending' | 'ready' | 'failed';
@@ -158,6 +164,9 @@ export interface ILeadMagnet extends Document {
   type: LeadMagnetType;
   tone: LeadMagnetTone;
   pdfUrl?: string;
+  infographicUrl?: string;
+  infographicStyle?: InfographicStyle;
+  infographicOrientation?: InfographicOrientation;
   landingPageHtml?: string;
   landingPageCopyJson?: ILandingPageCopy;
   emailsJson?: IEmailSequence;
@@ -171,6 +180,7 @@ export interface ILeadMagnet extends Document {
   slug: string;
   title?: string;
   isPublished: boolean;
+  isPublic: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -289,6 +299,7 @@ export interface IQuiz extends Document {
 
   // Status
   status: QuizStatus;
+  isPublic: boolean;
 
   createdAt: Date;
   updatedAt: Date;
