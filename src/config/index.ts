@@ -24,6 +24,9 @@ export const config = {
   // OpenAI
   openaiApiKey: process.env.OPENAI_API_KEY || '',
 
+  // Gemini (Google AI)
+  geminiApiKey: process.env.GEMINI_API_KEY || '',
+
   // Stripe
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY || '',

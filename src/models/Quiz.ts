@@ -262,6 +262,11 @@ const quizSchema = new Schema<IQuiz>(
       },
       default: 'draft',
     },
+    isPublic: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -276,6 +281,7 @@ const quizSchema = new Schema<IQuiz>(
 quizSchema.index({ userId: 1, slug: 1 }, { unique: true });
 quizSchema.index({ userId: 1, createdAt: -1 });
 quizSchema.index({ status: 1 });
+quizSchema.index({ isPublic: 1, createdAt: -1 });
 
 // ============================================
 // Virtual for response count

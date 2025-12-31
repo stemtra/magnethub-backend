@@ -75,6 +75,7 @@ function generatePdfHtml(
     swipefile: 'SWIPE FILE',
     cheatsheet: 'CHEAT SHEET',
     casestudy: 'CASE STUDY',
+    infographic: 'INFOGRAPHIC',
   };
 
   // Determine if we're in dark or light mode based on background

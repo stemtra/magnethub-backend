@@ -49,8 +49,8 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
       type: String,
       required: [true, 'Type is required'],
       enum: {
-        values: ['guide', 'checklist', 'mistakes', 'blueprint', 'swipefile', 'cheatsheet', 'casestudy'],
-        message: 'Type must be one of: guide, checklist, mistakes, blueprint, swipefile, cheatsheet, casestudy',
+        values: ['guide', 'checklist', 'mistakes', 'blueprint', 'swipefile', 'cheatsheet', 'casestudy', 'infographic'],
+        message: 'Type must be one of: guide, checklist, mistakes, blueprint, swipefile, cheatsheet, casestudy, infographic',
       },
     },
     tone: {
@@ -69,6 +69,25 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
     pdfUrl: {
       type: String,
       trim: true,
+    },
+    // Infographic-specific fields
+    infographicUrl: {
+      type: String,
+      trim: true,
+    },
+    infographicStyle: {
+      type: String,
+      enum: {
+        values: ['minimal', 'modern', 'bold', 'professional'],
+        message: 'Infographic style must be one of: minimal, modern, bold, professional',
+      },
+    },
+    infographicOrientation: {
+      type: String,
+      enum: {
+        values: ['square', 'portrait', 'landscape'],
+        message: 'Infographic orientation must be one of: square, portrait, landscape',
+      },
     },
     landingPageHtml: {
       type: String,
@@ -128,6 +147,11 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
       type: Boolean,
       default: true,
     },
+    isPublic: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -141,6 +165,7 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
 // Compound index for unique slug per user
 leadMagnetSchema.index({ userId: 1, slug: 1 }, { unique: true });
 leadMagnetSchema.index({ userId: 1, createdAt: -1 });
+leadMagnetSchema.index({ isPublic: 1, createdAt: -1 });
 
 // ============================================
 // Virtual for lead count (will be populated)
