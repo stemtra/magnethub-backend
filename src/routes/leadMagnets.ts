@@ -64,6 +64,9 @@ const generateUnifiedSchema = z.object({
   // Quiz-specific fields
   numQuestions: z.number().int().min(3).max(20).optional(),
   numResults: z.number().int().min(2).max(8).optional(),
+  // Infographic-specific fields
+  infographicStyle: z.enum(['minimal', 'modern', 'bold', 'professional']).optional(),
+  infographicOrientation: z.enum(['square', 'portrait', 'landscape']).optional(),
 }).refine(
   (data) => {
     // If quiz, require numQuestions and numResults

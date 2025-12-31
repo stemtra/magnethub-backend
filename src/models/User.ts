@@ -70,6 +70,12 @@ const userSchema = new Schema<IUser>(
       type: Schema.Types.ObjectId,
       ref: 'Subscription',
     },
+    // Privacy settings
+    defaultLeadMagnetPrivacy: {
+      type: String,
+      enum: ['public', 'private'],
+      default: 'public',
+    },
   },
   {
     timestamps: true,

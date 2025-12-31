@@ -5,10 +5,12 @@ import { LeadMagnet } from '../models/LeadMagnet.js';
 import { Quiz } from '../models/Quiz.js';
 import { Lead } from '../models/Lead.js';
 import { Brand } from '../models/Brand.js';
+import { User } from '../models/User.js';
 import { runPipelineToContent, generateLandingPageCopy, generateEmailSequence } from '../services/aiService.js';
 import { generateQuiz } from '../services/quizGenerationService.js';
+import { generateInfographic } from '../services/infographicService.js';
 import { generatePdf } from '../services/pdfService.js';
-import { uploadPdf, getSignedPdfUrl } from '../services/storageService.js';
+import { uploadPdf, getSignedPdfUrl, getSignedImageUrl } from '../services/storageService.js';
 import { renderLandingPage } from '../services/templateService.js';
 import { getRemainingGenerations } from '../middleware/rateLimit.js';
 import { billingService } from '../services/billingService.js';
@@ -35,6 +37,32 @@ async function attachSignedPdfUrl<T extends { pdfUrl?: string }>(
   }
 }
 
+async function attachSignedImageUrl<T extends { infographicUrl?: string }>(
+  leadMagnet: T
+): Promise<T> {
+  if (!leadMagnet.infographicUrl) return leadMagnet;
+
+  try {
+    const signedUrl = await getSignedImageUrl(leadMagnet.infographicUrl);
+    return { ...leadMagnet, infographicUrl: signedUrl };
+  } catch (error) {
+    logger.error('Failed to attach signed image URL; returning original.', {
+      error,
+      infographicUrl: leadMagnet.infographicUrl,
+    });
+    return leadMagnet;
+  }
+}
+
+async function attachSignedUrls<T extends { pdfUrl?: string; infographicUrl?: string }>(
+  leadMagnet: T
+): Promise<T> {
+  let result = leadMagnet;
+  result = await attachSignedPdfUrl(result);
+  result = await attachSignedImageUrl(result);
+  return result;
+}
+
 // ============================================
 // Generate Lead Magnet (New Unified Flow)
 // ============================================
@@ -49,7 +77,7 @@ export async function generateUnified(
       throw AppError.unauthorized();
     }
 
-    const { brandId, topic, type, numQuestions, numResults } = req.body;
+    const { brandId, topic, type, numQuestions, numResults, infographicStyle, infographicOrientation } = req.body;
 
     // Validate required fields
     if (!brandId) {
@@ -68,11 +96,24 @@ export async function generateUnified(
       throw AppError.badRequest('Brand not found');
     }
 
+    // Get user's subscription to determine privacy setting
+    const subscription = await billingService.getOrCreateSubscription(req.user._id.toString());
+    const userDoc = await User.findById(req.user._id);
+    
+    // Determine if lead magnet should be public
+    // Free plans: always public
+    // Paid plans: use user's default privacy setting (default to public)
+    const isPublic = subscription.plan === 'free' 
+      ? true 
+      : (userDoc?.defaultLeadMagnetPrivacy !== 'private');
+
     logger.info('Starting unified lead magnet generation', {
       userId: req.user._id,
       brandId: brand._id,
       type,
       topic,
+      isPublic,
+      plan: subscription.plan,
     });
 
     // Branch based on type
@@ -113,7 +154,7 @@ export async function generateUnified(
           order: idx,
           answers: q.answers.map(a => ({
             answerText: a.answerText,
-            resultMapping: generatedQuiz.results[a.resultIndex]?._id, // Will be set after results created
+            resultMapping: undefined as any, // Will be set after results created
           })),
         })),
         results: generatedQuiz.results.map(r => ({
@@ -128,6 +169,7 @@ export async function generateUnified(
         logoUrl: brand.settings.logoUrl,
         theme: brand.settings.theme === 'dark' ? 'dark' : 'light',
         status: 'published',
+        isPublic,
       });
 
       // Map result IDs back to answers
@@ -152,12 +194,71 @@ export async function generateUnified(
         success: true,
         data: { quiz },
       });
+    } else if (type === 'infographic') {
+      // ============================================
+      // INFOGRAPHIC GENERATION PATH
+      // ============================================
+      
+      const style = infographicStyle || 'modern';
+      const orientation = infographicOrientation || 'square';
+
+      // Generate infographic using Gemini
+      const generatedInfographic = await generateInfographic({
+        topic,
+        brand,
+        style,
+        orientation,
+      });
+
+      // Generate unique slug
+      const baseSlug = slugify(topic, { lower: true, strict: true });
+      let slug = baseSlug;
+      let counter = 1;
+      while (await LeadMagnet.findOne({ userId: req.user._id, slug })) {
+        slug = `${baseSlug}-${counter}`;
+        counter++;
+      }
+
+      // Create lead magnet record for infographic
+      const leadMagnet = await LeadMagnet.create({
+        userId: req.user._id,
+        brandId: brand._id,
+        sourceType: brand.sourceType,
+        sourceUrl: brand.sourceUrl,
+        goal: 'get_leads', // Default goal for infographics
+        type: 'infographic',
+        tone: 'professional', // Default tone
+        title: generatedInfographic.title,
+        infographicUrl: generatedInfographic.imageUrl,
+        infographicStyle: style,
+        infographicOrientation: orientation,
+        slug,
+        isPublished: true,
+        isPublic,
+        generationStatus: 'complete',
+        landingStatus: 'pending', // Landing page generated later
+        emailsStatus: 'pending', // Emails generated later
+      });
+
+      // Record usage for billing
+      await billingService.recordLeadMagnetUsage(req.user._id.toString());
+
+      logger.info('Infographic generated successfully', {
+        userId: req.user._id,
+        leadMagnetId: leadMagnet._id,
+        slug: leadMagnet.slug,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: { leadMagnet },
+      });
     } else {
       // ============================================
       // OTHER LEAD MAGNET TYPES (Coming Soon)
       // ============================================
       
-      throw AppError.badRequest(`Lead magnet type "${type}" is not yet supported. Only "quiz" is available.`);
+      throw AppError.badRequest(`Lead magnet type "${type}" is not yet supported. Only "quiz" and "infographic" are available.`);
     }
   } catch (error) {
     next(error);
@@ -339,6 +440,15 @@ export async function generate(
     const filename = `pdfs/${req.user._id}/${slug}-${uuidv4().slice(0, 8)}.pdf`;
     const pdfUrl = await uploadPdf(pdfBuffer, filename);
 
+    // Get user's subscription to determine privacy setting
+    const subscription = await billingService.getOrCreateSubscription(req.user._id.toString());
+    const userDoc = await User.findById(req.user._id);
+    
+    // Determine if lead magnet should be public
+    const isPublic = subscription.plan === 'free' 
+      ? true 
+      : (userDoc?.defaultLeadMagnetPrivacy !== 'private');
+
     // Create lead magnet record with brand reference
     const leadMagnet = await LeadMagnet.create({
       userId: req.user._id,
@@ -358,12 +468,13 @@ export async function generate(
       contentJson: phase1.content,
       slug,
       isPublished: true,
+      isPublic,
       generationStatus: 'pdf_ready',
       landingStatus: 'pending',
       emailsStatus: 'pending',
     });
 
-    const leadMagnetWithSignedUrl = await attachSignedPdfUrl(leadMagnet.toObject());
+    const leadMagnetWithSignedUrl = await attachSignedUrls(leadMagnet.toObject());
 
     // Record usage for billing
     await billingService.recordLeadMagnetUsage(req.user._id.toString());
@@ -483,7 +594,7 @@ export async function getAll(
       .populate('leadCount');
 
     const leadMagnetsWithSignedUrls = await Promise.all(
-      leadMagnets.map(async (lm) => attachSignedPdfUrl(lm.toObject()))
+      leadMagnets.map(async (lm) => attachSignedUrls(lm.toObject()))
     );
 
     const remaining = await getRemainingGenerations(req.user._id.toString());
@@ -522,7 +633,7 @@ export async function getOne(
       throw AppError.notFound('Lead magnet not found');
     }
 
-    const leadMagnetWithSignedUrl = await attachSignedPdfUrl(leadMagnet.toObject());
+    const leadMagnetWithSignedUrl = await attachSignedUrls(leadMagnet.toObject());
 
     res.json({
       success: true,
@@ -556,6 +667,35 @@ export async function remove(
 
     if (!leadMagnet) {
       throw AppError.notFound('Lead magnet not found');
+    }
+
+    // Delete associated files from R2
+    const { deletePdf, deleteImage } = await import('../services/storageService.js');
+    
+    // Delete PDF if it exists
+    if (leadMagnet.pdfUrl) {
+      try {
+        await deletePdf(leadMagnet.pdfUrl);
+        logger.info('PDF deleted from R2', { pdfUrl: leadMagnet.pdfUrl });
+      } catch (error) {
+        logger.warn('Failed to delete PDF from R2 (non-fatal)', {
+          error: error instanceof Error ? error.message : String(error),
+          pdfUrl: leadMagnet.pdfUrl,
+        });
+      }
+    }
+    
+    // Delete infographic if it exists
+    if (leadMagnet.infographicUrl) {
+      try {
+        await deleteImage(leadMagnet.infographicUrl);
+        logger.info('Infographic deleted from R2', { infographicUrl: leadMagnet.infographicUrl });
+      } catch (error) {
+        logger.warn('Failed to delete infographic from R2 (non-fatal)', {
+          error: error instanceof Error ? error.message : String(error),
+          infographicUrl: leadMagnet.infographicUrl,
+        });
+      }
     }
 
     // Delete associated leads
