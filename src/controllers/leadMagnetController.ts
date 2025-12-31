@@ -113,7 +113,7 @@ export async function generateUnified(
           order: idx,
           answers: q.answers.map(a => ({
             answerText: a.answerText,
-            resultMapping: generatedQuiz.results[a.resultIndex]?._id, // Will be set after results created
+            // resultMapping will be set after results are created (see lines 134-139)
           })),
         })),
         results: generatedQuiz.results.map(r => ({
