@@ -227,6 +227,125 @@ export async function getSignedPdfUrl(
 }
 
 // ============================================
+// Upload Image (for infographics, logos, etc.)
+// ============================================
+
+export async function uploadImage(
+  imageBuffer: Buffer,
+  mimeType: string = 'image/png',
+  filename?: string
+): Promise<string> {
+  if (!isCloudStorageConfigured()) {
+    throw AppError.internal('Cloud storage is not configured. Cannot upload image.');
+  }
+
+  // Determine file extension from mimeType
+  const extension = mimeType.split('/')[1] || 'png';
+  const key = filename || `infographics/${uuidv4()}.${extension}`;
+  const publicBaseUrl = getR2PublicBaseUrl();
+
+  if (!publicBaseUrl) {
+    logger.error('Cloud storage base URL is missing even though credentials are present.');
+    throw AppError.internal('Cloud storage base URL missing. Cannot upload image.');
+  }
+
+  logger.info('Uploading image to cloud storage', {
+    key,
+    sizeKB: Math.round(imageBuffer.length / 1024),
+    bucket: config.r2.bucketName,
+    mimeType,
+  });
+
+  try {
+    await getS3Client().send(new PutObjectCommand({
+      Bucket: config.r2.bucketName,
+      Key: key,
+      Body: imageBuffer,
+      ContentType: mimeType,
+      CacheControl: 'public, max-age=31536000',
+    }));
+
+    const publicUrl = `${publicBaseUrl}/${key}`;
+    
+    logger.info('Image uploaded to cloud successfully', { key, url: publicUrl });
+    
+    return publicUrl;
+  } catch (error) {
+    logger.error('Failed to upload image to cloud', {
+      error,
+      bucket: config.r2.bucketName,
+      accountId: config.r2.accountId,
+      key,
+    });
+    throw AppError.internal('Failed to upload image. Please try again.');
+  }
+}
+
+// ============================================
+// Get Signed Image URL (for viewing)
+// ============================================
+
+export async function getSignedImageUrl(
+  storedUrl: string,
+  expiresInSeconds = 60 * 60 * 24 * 7 // 7 days default for images
+): Promise<string> {
+  if (!isCloudStorageConfigured()) {
+    logger.warn('Cloud storage not configured when requesting signed image URL; returning original URL.');
+    return storedUrl;
+  }
+
+  const key = getR2ObjectKeyFromUrl(storedUrl);
+  if (!key) {
+    logger.warn('Unable to derive R2 object key from stored URL; returning original URL.', { storedUrl });
+    return storedUrl;
+  }
+
+  // Derive a friendly filename for the Content-Disposition header
+  const filename = key.split('/').pop() || 'infographic.png';
+  const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+  // Determine content type from extension
+  const extension = filename.split('.').pop()?.toLowerCase() || 'png';
+  const contentTypeMap: Record<string, string> = {
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+  };
+  const contentType = contentTypeMap[extension] || 'image/png';
+
+  try {
+    const signedUrl = await getSignedUrl(
+      getS3Client(),
+      new GetObjectCommand({
+        Bucket: config.r2.bucketName,
+        Key: key,
+        ResponseContentDisposition: `inline; filename="${safeFilename}"`,
+        ResponseContentType: contentType,
+      }),
+      { expiresIn: expiresInSeconds }
+    );
+
+    logger.info('Generated signed image URL', {
+      key,
+      safeFilename,
+      bucket: config.r2.bucketName,
+      expiresInSeconds,
+    });
+
+    return signedUrl;
+  } catch (error) {
+    logger.error('Failed to generate signed image URL; returning original URL.', {
+      error,
+      key,
+      bucket: config.r2.bucketName,
+    });
+    return storedUrl;
+  }
+}
+
+// ============================================
 // Delete PDF
 // ============================================
 
@@ -270,6 +389,49 @@ export async function deletePdf(url: string): Promise<void> {
     logger.info('Cloud PDF deleted successfully', { key });
   } catch (error) {
     logger.error('Failed to delete PDF', {
+      error,
+      url,
+      bucket: config.r2.bucketName,
+      accountId: config.r2.accountId,
+    });
+    // Don't throw - deletion failures shouldn't break the flow
+  }
+}
+
+// ============================================
+// Delete Image
+// ============================================
+
+export async function deleteImage(url: string): Promise<void> {
+  try {
+    if (!isCloudStorageConfigured()) {
+      logger.error('Cloud storage not configured; cannot delete image from R2', { url });
+      throw AppError.internal('Cloud storage is not configured. Cannot delete image.');
+    }
+
+    const publicBaseUrl = getR2PublicBaseUrl();
+
+    if (!publicBaseUrl) {
+      logger.error('Cloud storage configured but no public base URL; cannot delete image.', { url });
+      throw AppError.internal('Cloud storage base URL missing. Cannot delete image.');
+    }
+
+    // Extract the key from the URL
+    const normalizedBase = `${publicBaseUrl}/`;
+    const key = url.startsWith(normalizedBase)
+      ? url.slice(normalizedBase.length)
+      : url.replace(`${config.r2.publicUrl}/`, '');
+    
+    logger.info('Deleting image from cloud storage', { key, bucket: config.r2.bucketName });
+
+    await getS3Client().send(new DeleteObjectCommand({
+      Bucket: config.r2.bucketName,
+      Key: key,
+    }));
+
+    logger.info('Cloud image deleted successfully', { key });
+  } catch (error) {
+    logger.error('Failed to delete image', {
       error,
       url,
       bucket: config.r2.bucketName,

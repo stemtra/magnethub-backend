@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import passport from 'passport';
 import slugify from 'slugify';
 import { User } from '../models/User.js';
+import { Subscription } from '../models/Subscription.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
@@ -9,7 +10,7 @@ import { SlackService } from '../services/slackService.js';
 import { welcomeEmail } from '../templates/emailTemplates.js';
 import { sendEmail } from '../services/emailService.js';
 import { setSentryUser, clearSentryUser } from '../utils/sentry.js';
-import type { AuthenticatedRequest, IUserPublic, ApiResponse, IBrandSettings, IUser } from '../types/index.js';
+import type { AuthenticatedRequest, IUserPublic, ApiResponse, IBrandSettings, IUser, LeadMagnetPrivacy } from '../types/index.js';
 
 // ============================================
 // Helper Functions
@@ -451,6 +452,66 @@ export async function submitFeedback(
     res.json({
       success: true,
       data: { message: 'Thank you for your feedback!' },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ============================================
+// Update Privacy Settings
+// ============================================
+
+export async function updatePrivacySettings(
+  req: Request,
+  res: Response<ApiResponse<{ user: IUserPublic; message: string }>>,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user) {
+      throw AppError.unauthorized();
+    }
+
+    const { defaultLeadMagnetPrivacy } = req.body;
+
+    // Validate the privacy value
+    if (!defaultLeadMagnetPrivacy || !['public', 'private'].includes(defaultLeadMagnetPrivacy)) {
+      throw AppError.badRequest('Invalid privacy setting. Must be "public" or "private".');
+    }
+
+    // Check if user is on a paid plan
+    const subscription = await Subscription.findOne({ 
+      userId: authReq.user._id,
+      status: 'active'
+    }).sort({ createdAt: -1 });
+
+    if (!subscription || subscription.plan === 'free') {
+      throw AppError.forbidden('Privacy controls are only available on paid plans. Upgrade to keep your lead magnets private.');
+    }
+
+    // Update user's default privacy setting
+    const user = await User.findByIdAndUpdate(
+      authReq.user._id,
+      { defaultLeadMagnetPrivacy: defaultLeadMagnetPrivacy as LeadMagnetPrivacy },
+      { new: true, runValidators: true }
+    );
+
+    if (!user) {
+      throw AppError.notFound('User not found');
+    }
+
+    logger.info('Privacy settings updated', { 
+      userId: user._id, 
+      defaultLeadMagnetPrivacy 
+    });
+
+    res.json({
+      success: true,
+      data: { 
+        user: sanitizeUser(user),
+        message: `Default privacy set to ${defaultLeadMagnetPrivacy}. New lead magnets will be ${defaultLeadMagnetPrivacy} by default.`
+      },
     });
   } catch (error) {
     next(error);

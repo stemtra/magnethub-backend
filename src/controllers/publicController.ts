@@ -5,7 +5,7 @@ import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
 import { PageView } from '../models/PageView.js';
 import { sendDeliveryEmail } from '../services/emailService.js';
-import { getSignedPdfUrl } from '../services/storageService.js';
+import { getSignedPdfUrl, getSignedImageUrl } from '../services/storageService.js';
 import { renderLandingPage, DEFAULT_BRAND_SETTINGS } from '../services/templateService.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
@@ -188,6 +188,9 @@ export async function getLandingPageData(
       slug: leadMagnet.slug,
       type: leadMagnet.type,
       landingPageCopyJson: leadMagnet.landingPageCopyJson,
+      infographicUrl: leadMagnet.infographicUrl,
+      infographicStyle: leadMagnet.infographicStyle,
+      infographicOrientation: leadMagnet.infographicOrientation,
     };
 
     const brandSettings = user.brandSettings || DEFAULT_BRAND_SETTINGS;
@@ -387,16 +390,28 @@ export async function subscribe(
     if (leadMagnet.emailsJson?.emails?.[0]) {
       const deliveryEmail: IEmail = leadMagnet.emailsJson.emails[0];
 
-      // The stored PDF URL may point at the R2 API hostname (requires auth).
-      // For emails, always convert it to a time-limited signed URL so the recipient can open it.
+      // The stored PDF/Infographic URLs may point at the R2 API hostname (requires auth).
+      // For emails, always convert them to time-limited signed URLs so recipients can open them.
       const storedPdfUrl = typeof leadMagnet.pdfUrl === 'string' ? leadMagnet.pdfUrl : '';
       const signedPdfUrl = storedPdfUrl ? await getSignedPdfUrl(storedPdfUrl, 60 * 60 * 24 * 7) : '';
-      const bodyHtml = signedPdfUrl
-        ? deliveryEmail.body_html.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl)
-        : deliveryEmail.body_html;
-      const bodyText = signedPdfUrl
-        ? deliveryEmail.body_text.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl)
-        : deliveryEmail.body_text;
+      
+      const storedInfographicUrl = typeof leadMagnet.infographicUrl === 'string' ? leadMagnet.infographicUrl : '';
+      const signedInfographicUrl = storedInfographicUrl ? await getSignedImageUrl(storedInfographicUrl, 60 * 60 * 24 * 7) : '';
+      
+      let bodyHtml = deliveryEmail.body_html;
+      let bodyText = deliveryEmail.body_text;
+      
+      // Replace PDF URL
+      if (signedPdfUrl) {
+        bodyHtml = bodyHtml.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl);
+        bodyText = bodyText.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl);
+      }
+      
+      // Replace Infographic URL
+      if (signedInfographicUrl) {
+        bodyHtml = bodyHtml.replaceAll('{{INFOGRAPHIC_URL}}', signedInfographicUrl).replaceAll(storedInfographicUrl, signedInfographicUrl);
+        bodyText = bodyText.replaceAll('{{INFOGRAPHIC_URL}}', signedInfographicUrl).replaceAll(storedInfographicUrl, signedInfographicUrl);
+      }
       
       // Don't await - send in background
       sendDeliveryEmail(

@@ -45,6 +45,10 @@ const updateBrandSettingsSchema = z.object({
   logoUrl: z.string().url().optional().or(z.literal('')),
 });
 
+const updatePrivacySettingsSchema = z.object({
+  defaultLeadMagnetPrivacy: z.enum(['public', 'private']),
+});
+
 // ============================================
 // Routes
 // ============================================
@@ -84,6 +88,12 @@ router.patch('/profile', isAuthenticated, validateBody(updateProfileSchema), aut
  * Update user brand settings
  */
 router.patch('/brand-settings', isAuthenticated, validateBody(updateBrandSettingsSchema), authController.updateBrandSettings);
+
+/**
+ * PATCH /api/auth/privacy-settings
+ * Update user privacy settings (paid plans only)
+ */
+router.patch('/privacy-settings', isAuthenticated, validateBody(updatePrivacySettingsSchema), authController.updatePrivacySettings);
 
 /**
  * GET /api/auth/google
