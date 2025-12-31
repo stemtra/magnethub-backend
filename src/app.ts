@@ -21,6 +21,7 @@ import publicSubdomainRoutes from './routes/publicSubdomain.js';
 import analyticsRoutes from './routes/analytics.js';
 import billingRoutes from './routes/billing.js';
 import sentryRoutes from './routes/sentry.js';
+import exploreRoutes from './routes/explore.js';
 
 const app: express.Application = express();
 
@@ -135,6 +136,7 @@ app.use('/api/quizzes', quizRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/sentry', sentryRoutes);
+app.use('/api/explore', exploreRoutes);
 
 // Public routes (landing pages and lead capture)
 app.use('/public', publicRoutes);
