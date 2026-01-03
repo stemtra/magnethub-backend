@@ -61,6 +61,11 @@ const userSchema = new Schema<IUser>(
       type: brandSettingsSchema,
       default: undefined,
     },
+    // Onboarding
+    hasCompletedOnboarding: {
+      type: Boolean,
+      default: false,
+    },
     // Stripe integration
     stripeCustomerId: {
       type: String,

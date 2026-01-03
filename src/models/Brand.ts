@@ -3,12 +3,12 @@ import type { IBrand } from '../types/index.js';
 
 const brandSettingsSchema = new Schema(
   {
-    primaryColor: { type: String, default: '#0C0C0C' },
-    accentColor: { type: String, default: '#10B981' },
-    backgroundColor: { type: String, default: '#0C0C0C' },
-    textColor: { type: String, default: '#FAFAFA' },
-    fontFamily: { type: String, default: 'Plus Jakarta Sans' },
-    theme: { type: String, enum: ['light', 'dark'], default: 'dark' },
+    primaryColor: { type: String, default: '#1F1F1F' }, // Neutral dark gray instead of MagnetHub black
+    accentColor: { type: String, default: '#3B82F6' }, // Blue instead of MagnetHub green
+    backgroundColor: { type: String, default: '#FFFFFF' }, // White instead of MagnetHub black
+    textColor: { type: String, default: '#1F1F1F' }, // Dark gray for light backgrounds
+    fontFamily: { type: String, default: 'Inter' }, // Inter instead of MagnetHub's Plus Jakarta Sans
+    theme: { type: String, enum: ['light', 'dark'], default: 'light' }, // Light theme as default
     logoUrl: { type: String },
     landingPageTemplate: { 
       type: String, 

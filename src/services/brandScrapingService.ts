@@ -118,14 +118,14 @@ export async function scrapeBrand(
     let brandSettings: IBrandSettings | undefined;
     let additionalData: any = {};
 
-    // Default brand settings for social platforms
+    // Default brand settings for social platforms (neutral theme)
     const defaultSocialBrand: IBrandSettings = {
-      primaryColor: '#0C0C0C',
-      accentColor: '#10B981',
-      backgroundColor: '#0C0C0C',
-      textColor: '#FAFAFA',
-      fontFamily: 'Plus Jakarta Sans',
-      theme: 'dark',
+      primaryColor: '#1F1F1F',
+      accentColor: '#3B82F6',
+      backgroundColor: '#FFFFFF',
+      textColor: '#1F1F1F',
+      fontFamily: 'Inter',
+      theme: 'light',
     };
 
     switch (sourceType) {

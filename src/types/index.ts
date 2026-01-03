@@ -82,6 +82,8 @@ export interface IUser extends Document {
   username: string;
   googleId?: string;
   brandSettings?: IBrandSettings;
+  // Onboarding
+  hasCompletedOnboarding?: boolean;
   // Stripe
   stripeCustomerId?: string;
   currentSubscriptionId?: Types.ObjectId;
@@ -98,6 +100,7 @@ export interface IUserPublic {
   name: string;
   username: string;
   brandSettings?: IBrandSettings;
+  hasCompletedOnboarding?: boolean;
   plan?: PlanType;
   createdAt: Date;
 }

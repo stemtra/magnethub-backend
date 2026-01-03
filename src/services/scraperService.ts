@@ -23,14 +23,14 @@ export interface ExtractedBrand {
   logoUrl?: string;
 }
 
-// Default brand settings (elegant dark theme)
+// Default brand settings (neutral light theme)
 const DEFAULT_BRAND: ExtractedBrand = {
-  primaryColor: '#0C0C0C',
-  accentColor: '#10B981',
-  backgroundColor: '#0C0C0C',
-  textColor: '#FAFAFA',
-  fontFamily: 'Plus Jakarta Sans',
-  theme: 'dark',
+  primaryColor: '#1F1F1F',
+  accentColor: '#3B82F6',
+  backgroundColor: '#FFFFFF',
+  textColor: '#1F1F1F',
+  fontFamily: 'Inter',
+  theme: 'light',
 };
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';

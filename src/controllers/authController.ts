@@ -22,6 +22,7 @@ function sanitizeUser(user: {
   name: string; 
   username: string; 
   brandSettings?: IBrandSettings;
+  hasCompletedOnboarding?: boolean;
   createdAt: Date;
 }): IUserPublic {
   return {
@@ -30,6 +31,7 @@ function sanitizeUser(user: {
     name: user.name,
     username: user.username,
     brandSettings: user.brandSettings,
+    hasCompletedOnboarding: user.hasCompletedOnboarding,
     createdAt: user.createdAt,
   };
 }

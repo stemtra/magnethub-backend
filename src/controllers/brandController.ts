@@ -115,9 +115,26 @@ export async function create(
     }
 
     // Merge scraped settings with provided settings (provided settings take precedence)
-    const finalSettings = scrapedData?.brandSettings 
-      ? { ...scrapedData.brandSettings, ...settings }
-      : settings || {};
+    // If no scraped settings and no provided settings, ensure we have proper defaults
+    let finalSettings: any;
+    if (scrapedData?.brandSettings) {
+      // Use scraped settings as base, override with any provided settings
+      finalSettings = { ...scrapedData.brandSettings, ...settings };
+    } else if (settings && Object.keys(settings).length > 0) {
+      // Use provided settings
+      finalSettings = settings;
+    } else {
+      // No settings available - use neutral defaults instead of MagnetHub colors
+      finalSettings = {
+        primaryColor: '#1F1F1F',
+        accentColor: '#3B82F6', // Blue accent
+        backgroundColor: '#FFFFFF',
+        textColor: '#1F1F1F',
+        fontFamily: 'Inter',
+        theme: 'light',
+      };
+      logger.info('Using neutral default settings for brand', { name });
+    }
 
     const brand = await Brand.create({
       userId: req.user._id,
@@ -139,6 +156,13 @@ export async function create(
     if (scrapedData?.logoUrl && !settings?.logoUrl) {
       brand.settings.logoUrl = scrapedData.logoUrl;
       await brand.save();
+    }
+
+    // Mark user as having completed onboarding after creating their first brand
+    if (brandCount === 0 && req.user) {
+      req.user.hasCompletedOnboarding = true;
+      await req.user.save();
+      logger.info('User completed onboarding', { userId: req.user._id });
     }
 
     logger.info('Brand created', {

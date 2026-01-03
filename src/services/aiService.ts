@@ -693,14 +693,14 @@ export async function runPipelineToContent(
   let youtubeThumbnail: string | undefined;
   let sourceDescription: string | undefined;
 
-  // Default branding for social platforms
+  // Default branding for social platforms (neutral theme)
   const defaultSocialBrand: IBrandSettings = {
-    primaryColor: '#0C0C0C',
-    accentColor: '#10B981',
-    backgroundColor: '#0C0C0C',
-    textColor: '#FAFAFA',
-    fontFamily: 'Plus Jakarta Sans',
-    theme: 'dark',
+    primaryColor: '#1F1F1F',
+    accentColor: '#3B82F6',
+    backgroundColor: '#FFFFFF',
+    textColor: '#1F1F1F',
+    fontFamily: 'Inter',
+    theme: 'light',
   };
 
   // Use cached data if available (skip scraping to save resources)
