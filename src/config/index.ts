@@ -63,7 +63,7 @@ export const config = {
   // Public landing pages (subdomain routing)
   // Example desired: https://{username}.magnethubai.com/{slug}
   publicRootDomain: process.env.PUBLIC_ROOT_DOMAIN || 'magnethubai.com',
-  publicReservedSubdomains: (process.env.PUBLIC_RESERVED_SUBDOMAINS || 'app,api,www')
+  publicReservedSubdomains: (process.env.PUBLIC_RESERVED_SUBDOMAINS || 'app,api,www,quiz')
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),

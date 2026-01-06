@@ -122,10 +122,50 @@ router.get('/__debug/host', (req, res) => {
   });
 });
 
-// Guard: only handle requests on username subdomains of the public root domain.
+// Helper function to check if we're on the quiz subdomain
+function isQuizSubdomain(hostname: string): boolean {
+  const rawRoot = String(config.publicRootDomain || '')
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/^\.+/, '')
+    .replace(/\/+$/, '')
+    .replace(/\.+$/, '')
+    .toLowerCase();
+  if (!rawRoot) return false;
+  
+  const root = (() => {
+    try {
+      if (rawRoot.startsWith('http://') || rawRoot.startsWith('https://')) {
+        return new URL(rawRoot).hostname.replace(/^\.+/, '').replace(/\.+$/, '').toLowerCase();
+      }
+    } catch {
+      // ignore
+    }
+    return rawRoot;
+  })();
+
+  const host = String(hostname || '')
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/\.+$/, '')
+    .toLowerCase();
+  
+  return host === `quiz.${root}`;
+}
+
+// Guard: only handle requests on username subdomains or quiz subdomain of the public root domain.
 router.use((req, _res, next) => {
   // Prefer original host forwarded by proxies/CDN/edge.
   const hostname = getOriginalHostname(req) || req.hostname;
+  
+  // Check if we're on quiz subdomain
+  if (isQuizSubdomain(hostname)) {
+    (req as PublicSubdomainRequest)._publicHostname = hostname;
+    (req as any)._isQuizSubdomain = true;
+    return next();
+  }
+  
+  // Otherwise, try to extract username
   const username = extractUsernameFromHostname(hostname);
   if (!username) return next();
   // NOTE: don't write to req.params here. Express overwrites req.params during route matching.
@@ -173,7 +213,42 @@ router.get('/tenant/validate', (req, res, next) => {
 });
 
 // ============================================
-// Quiz Routes (must be before :slug to avoid conflicts)
+// Quiz Subdomain Routes (quiz.magnethubai.com/{username}/{slug})
+// ============================================
+
+/**
+ * GET /:username/:slug
+ * Get published quiz data on quiz subdomain
+ */
+router.get('/:username/:slug', (req, res, next) => {
+  const isQuiz = (req as any)._isQuizSubdomain;
+  if (!isQuiz) return next();
+  // Username and slug are already in params
+  return publicQuizController.getQuiz(req, res, next);
+});
+
+/**
+ * POST /:username/:slug/start
+ * Record quiz start on quiz subdomain
+ */
+router.post('/:username/:slug/start', (req, res, next) => {
+  const isQuiz = (req as any)._isQuizSubdomain;
+  if (!isQuiz) return next();
+  return publicQuizController.startQuiz(req, res, next);
+});
+
+/**
+ * POST /:username/:slug/submit
+ * Submit quiz on quiz subdomain
+ */
+router.post('/:username/:slug/submit', (req, res, next) => {
+  const isQuiz = (req as any)._isQuizSubdomain;
+  if (!isQuiz) return next();
+  return publicQuizController.submitQuiz(req, res, next);
+});
+
+// ============================================
+// Quiz Routes on Username Subdomains ({username}.magnethubai.com/quiz/{slug})
 // ============================================
 
 /**
