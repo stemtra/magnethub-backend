@@ -31,6 +31,7 @@ const createBrandSchema = z.object({
 
 const updateBrandSchema = z.object({
   name: z.string().min(1).max(100).optional(),
+  sourceUrl: z.string().min(1).optional(),
   settings: brandSettingsSchema,
   isDefault: z.boolean().optional(),
 });

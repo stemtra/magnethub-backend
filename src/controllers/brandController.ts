@@ -3,6 +3,8 @@ import { Brand } from '../models/Brand.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import { scrapeBrand } from '../services/brandScrapingService.js';
+import { normalizeInstagramUrl } from '../services/instagramService.js';
+import { normalizeYouTubeUrl } from '../services/youtubeService.js';
 import type { AuthenticatedRequest, ApiResponse, IBrand, IBrandSettings } from '../types/index.js';
 
 // ============================================
@@ -81,10 +83,19 @@ export async function create(
 
     const { name, sourceType, sourceUrl, settings, isDefault } = req.body;
 
+    // Normalize the sourceUrl based on source type
+    let normalizedSourceUrl = sourceUrl;
+    if (sourceType === 'instagram') {
+      normalizedSourceUrl = normalizeInstagramUrl(sourceUrl);
+    } else if (sourceType === 'youtube') {
+      normalizedSourceUrl = normalizeYouTubeUrl(sourceUrl);
+    }
+    // For websites, no normalization needed (just trimmed by Mongoose)
+
     // Check if brand with same source already exists
     const existingBrand = await Brand.findOne({
       userId: req.user._id,
-      sourceUrl,
+      sourceUrl: normalizedSourceUrl,
     });
 
     if (existingBrand) {
@@ -98,8 +109,8 @@ export async function create(
     // Scrape and analyze the brand source
     let scrapedData;
     try {
-      logger.info('Scraping brand source', { sourceUrl, sourceType });
-      scrapedData = await scrapeBrand(sourceUrl, sourceType);
+      logger.info('Scraping brand source', { sourceUrl: normalizedSourceUrl, sourceType });
+      scrapedData = await scrapeBrand(normalizedSourceUrl, sourceType);
       logger.info('Brand scraping successful', {
         hasVoice: !!scrapedData.brandVoice,
         hasAudience: !!scrapedData.targetAudience,
@@ -109,7 +120,7 @@ export async function create(
       // Log error but don't fail brand creation
       logger.warn('Brand scraping failed, creating brand without scraped data', {
         error: scrapingError instanceof Error ? scrapingError.message : String(scrapingError),
-        sourceUrl,
+        sourceUrl: normalizedSourceUrl,
         sourceType,
       });
     }
@@ -141,7 +152,7 @@ export async function create(
       name,
       description: scrapedData?.description,
       sourceType,
-      sourceUrl,
+      sourceUrl: normalizedSourceUrl,
       settings: finalSettings,
       isDefault: shouldBeDefault,
       brandVoice: scrapedData?.brandVoice,
@@ -170,6 +181,7 @@ export async function create(
       brandId: brand._id,
       name,
       sourceType,
+      sourceUrl: normalizedSourceUrl,
       isScraped: brand.isScraped,
     });
 
@@ -197,7 +209,7 @@ export async function update(
     }
 
     const { id } = req.params;
-    const { name, settings, isDefault } = req.body;
+    const { name, sourceUrl, settings, isDefault } = req.body;
 
     const brand = await Brand.findOne({
       _id: id,
@@ -208,8 +220,33 @@ export async function update(
       throw AppError.notFound('Brand not found');
     }
 
+    // Normalize the sourceUrl based on source type
+    let normalizedSourceUrl = sourceUrl;
+    if (sourceUrl !== undefined) {
+      if (brand.sourceType === 'instagram') {
+        normalizedSourceUrl = normalizeInstagramUrl(sourceUrl);
+      } else if (brand.sourceType === 'youtube') {
+        normalizedSourceUrl = normalizeYouTubeUrl(sourceUrl);
+      }
+      // For websites, no normalization needed (just trimmed by Mongoose)
+    }
+
+    // If sourceUrl is being updated, check for duplicates
+    if (normalizedSourceUrl !== undefined && normalizedSourceUrl !== brand.sourceUrl) {
+      const existingBrand = await Brand.findOne({
+        userId: req.user._id,
+        sourceUrl: normalizedSourceUrl,
+        _id: { $ne: id }, // Exclude current brand from check
+      });
+
+      if (existingBrand) {
+        throw AppError.badRequest('A brand with this source already exists');
+      }
+    }
+
     // Update fields
     if (name !== undefined) brand.name = name;
+    if (normalizedSourceUrl !== undefined) brand.sourceUrl = normalizedSourceUrl;
     if (settings !== undefined) {
       brand.settings = { ...brand.settings, ...settings } as IBrandSettings;
     }
@@ -220,6 +257,13 @@ export async function update(
     logger.info('Brand updated', {
       userId: req.user._id,
       brandId: brand._id,
+      updatedFields: { 
+        name: name !== undefined, 
+        sourceUrl: sourceUrl !== undefined,
+        normalizedSourceUrl: normalizedSourceUrl !== sourceUrl ? normalizedSourceUrl : undefined,
+        settings: settings !== undefined, 
+        isDefault: isDefault !== undefined 
+      },
     });
 
     res.json({
