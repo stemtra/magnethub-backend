@@ -280,7 +280,7 @@ function parseFromMetaTags(html: string, username: string): IInstagramProfile | 
   if (descMatch) {
     const desc = descMatch[1];
     // Bio is often after the stats, look for it
-    const bioMatch = desc.match(/Posts?\s*[-–—]\s*(.+)/i);
+    const bioMatch = desc.match(/Posts?\s*[-–,]\s*(.+)/i);
     if (bioMatch) {
       bio = bioMatch[1].replace(/See Instagram photos and videos.*$/i, '').trim();
     }

@@ -173,7 +173,7 @@ export async function sendPaymentFailureEmail(params: {
     '',
     'If you have any questions, just reply to this email.',
     '',
-    '— The MagnetHub team',
+    ', The MagnetHub team',
   ]
     .filter(Boolean)
     .join('\n');
@@ -185,7 +185,7 @@ export async function sendPaymentFailureEmail(params: {
     <p>Please update your payment method to keep your account active.</p>
     <p><a href="${params.billingUrl}" target="_blank" rel="noopener noreferrer" style="background:#10B981;color:#fff;padding:12px 16px;border-radius:8px;text-decoration:none;display:inline-block;">Update payment</a></p>
     <p style="color:#6b7280;font-size:14px;">If you have any questions, just reply to this email.</p>
-    <p>— The MagnetHub team</p>
+    <p>, The MagnetHub team</p>
   `;
 
   try {
@@ -247,7 +247,7 @@ ${result.recommendation ? `MY RECOMMENDATION:\n${result.recommendation}\n` : ''}
 ${result.ctaText && result.ctaUrl ? `\n${result.ctaText}: ${result.ctaUrl}\n` : ''}
 Thanks for taking the quiz!
 
-— Powered by MagnetHub
+, Powered by MagnetHub
 `;
 
   // HTML version with styling

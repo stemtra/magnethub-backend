@@ -24,7 +24,7 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
     },
     sourceUrl: {
       type: String,
-      required: [true, 'Source URL is required'],
+      // Not required for user-uploaded media
       trim: true,
     },
     // @deprecated - kept for backward compatibility, use sourceUrl instead
@@ -39,7 +39,7 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
     },
     goal: {
       type: String,
-      required: [true, 'Goal is required'],
+      // Not required for user-uploaded media
       enum: {
         values: ['get_leads', 'sell_call', 'grow_list'],
         message: 'Goal must be one of: get_leads, sell_call, grow_list',
@@ -49,13 +49,13 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
       type: String,
       required: [true, 'Type is required'],
       enum: {
-        values: ['guide', 'checklist', 'mistakes', 'blueprint', 'swipefile', 'cheatsheet', 'casestudy', 'infographic'],
-        message: 'Type must be one of: guide, checklist, mistakes, blueprint, swipefile, cheatsheet, casestudy, infographic',
+        values: ['guide', 'checklist', 'mistakes', 'blueprint', 'swipefile', 'cheatsheet', 'casestudy', 'infographic', 'uploaded_pdf', 'uploaded_image', 'uploaded_audio'],
+        message: 'Type must be one of: guide, checklist, mistakes, blueprint, swipefile, cheatsheet, casestudy, infographic, uploaded_pdf, uploaded_image, uploaded_audio',
       },
     },
     tone: {
       type: String,
-      required: [true, 'Tone is required'],
+      // Not required for user-uploaded media
       enum: {
         values: ['professional', 'friendly', 'expert', 'persuasive'],
         message: 'Tone must be one of: professional, friendly, expert, persuasive',
@@ -151,6 +151,39 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
       type: Boolean,
       default: false,
       index: true,
+    },
+    // User-uploaded media fields
+    isUserUploaded: {
+      type: Boolean,
+      default: false,
+    },
+    uploadedFileUrl: {
+      type: String,
+      trim: true,
+    },
+    uploadedFileName: {
+      type: String,
+      trim: true,
+    },
+    uploadedFileType: {
+      type: String,
+      enum: {
+        values: ['pdf', 'image', 'audio'],
+        message: 'Uploaded file type must be one of: pdf, image, audio',
+      },
+    },
+    uploadedFileMimeType: {
+      type: String,
+      trim: true,
+    },
+    uploadedFileSize: {
+      type: Number,
+      min: [0, 'File size cannot be negative'],
+    },
+    description: {
+      type: String,
+      trim: true,
+      maxlength: [2000, 'Description cannot exceed 2000 characters'],
     },
   },
   {

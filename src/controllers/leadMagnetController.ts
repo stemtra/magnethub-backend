@@ -10,7 +10,7 @@ import { runPipelineToContent, generateLandingPageCopy, generateEmailSequence } 
 import { generateQuiz } from '../services/quizGenerationService.js';
 import { generateInfographic } from '../services/infographicService.js';
 import { generatePdf } from '../services/pdfService.js';
-import { uploadPdf, getSignedPdfUrl, getSignedImageUrl } from '../services/storageService.js';
+import { uploadPdf, getSignedPdfUrl, getSignedImageUrl, uploadFile, getSignedFileUrl, deleteFile } from '../services/storageService.js';
 import { renderLandingPage } from '../services/templateService.js';
 import { getRemainingGenerations } from '../middleware/rateLimit.js';
 import { billingService } from '../services/billingService.js';
@@ -18,7 +18,27 @@ import { isInstagramUrl, extractUsername, normalizeInstagramUrl } from '../servi
 import { isYouTubeUrl, extractYouTubeHandle, normalizeYouTubeUrl } from '../services/youtubeService.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
-import type { AuthenticatedRequest, ApiResponse, ILeadMagnet, IQuiz, IBrandSettings, SourceType, IBrand } from '../types/index.js';
+import type { AuthenticatedRequest, ApiResponse, ILeadMagnet, IQuiz, IBrandSettings, SourceType, IBrand, UploadedFileType, LeadMagnetType } from '../types/index.js';
+
+// ============================================
+// Helper Functions
+// ============================================
+
+/**
+ * Generate a clean, short slug from a title
+ * Takes first 60 characters or first 7 words (whichever is shorter)
+ */
+function generateSlugFromTitle(title: string): string {
+  // Take first 7 words or first 60 chars, whichever is shorter
+  const words = title.split(/\s+/);
+  const truncated = words.length > 7 
+    ? words.slice(0, 7).join(' ')
+    : title;
+  
+  const limited = truncated.length > 60 ? truncated.substring(0, 60) : truncated;
+  
+  return slugify(limited, { lower: true, strict: true });
+}
 
 async function attachSignedPdfUrl<T extends { pdfUrl?: string }>(
   leadMagnet: T
@@ -54,12 +74,30 @@ async function attachSignedImageUrl<T extends { infographicUrl?: string }>(
   }
 }
 
-async function attachSignedUrls<T extends { pdfUrl?: string; infographicUrl?: string }>(
+async function attachSignedUploadedFileUrl<T extends { uploadedFileUrl?: string; uploadedFileMimeType?: string }>(
+  leadMagnet: T
+): Promise<T> {
+  if (!leadMagnet.uploadedFileUrl || !leadMagnet.uploadedFileMimeType) return leadMagnet;
+
+  try {
+    const signedUrl = await getSignedFileUrl(leadMagnet.uploadedFileUrl, leadMagnet.uploadedFileMimeType);
+    return { ...leadMagnet, uploadedFileUrl: signedUrl };
+  } catch (error) {
+    logger.error('Failed to attach signed uploaded file URL; returning original.', {
+      error,
+      uploadedFileUrl: leadMagnet.uploadedFileUrl,
+    });
+    return leadMagnet;
+  }
+}
+
+async function attachSignedUrls<T extends { pdfUrl?: string; infographicUrl?: string; uploadedFileUrl?: string; uploadedFileMimeType?: string }>(
   leadMagnet: T
 ): Promise<T> {
   let result = leadMagnet;
   result = await attachSignedPdfUrl(result);
   result = await attachSignedImageUrl(result);
+  result = await attachSignedUploadedFileUrl(result);
   return result;
 }
 
@@ -99,12 +137,12 @@ export async function generateUnified(
     // Get user's subscription to determine privacy setting
     const subscription = await billingService.getOrCreateSubscription(req.user._id.toString());
     const userDoc = await User.findById(req.user._id);
-    
+
     // Determine if lead magnet should be public
     // Free plans: always public
     // Paid plans: use user's default privacy setting (default to public)
-    const isPublic = subscription.plan === 'free' 
-      ? true 
+    const isPublic = subscription.plan === 'free'
+      ? true
       : (userDoc?.defaultLeadMagnetPrivacy !== 'private');
 
     logger.info('Starting unified lead magnet generation', {
@@ -121,7 +159,7 @@ export async function generateUnified(
       // ============================================
       // QUIZ GENERATION PATH
       // ============================================
-      
+
       const quizNumQuestions = numQuestions || 10;
       const quizNumResults = numResults || 4;
 
@@ -133,8 +171,8 @@ export async function generateUnified(
         numResults: quizNumResults,
       });
 
-      // Generate unique slug
-      const baseSlug = slugify(topic, { lower: true, strict: true });
+      // Generate unique slug from title (not the full topic)
+      const baseSlug = generateSlugFromTitle(generatedQuiz.title);
       let slug = baseSlug;
       let counter = 1;
       while (await Quiz.findOne({ userId: req.user._id, slug })) {
@@ -198,7 +236,7 @@ export async function generateUnified(
       // ============================================
       // INFOGRAPHIC GENERATION PATH
       // ============================================
-      
+
       const style = infographicStyle || 'modern';
       const orientation = infographicOrientation || 'square';
 
@@ -210,8 +248,8 @@ export async function generateUnified(
         orientation,
       });
 
-      // Generate unique slug
-      const baseSlug = slugify(topic, { lower: true, strict: true });
+      // Generate unique slug from title (not the full topic)
+      const baseSlug = generateSlugFromTitle(generatedInfographic.title);
       let slug = baseSlug;
       let counter = 1;
       while (await LeadMagnet.findOne({ userId: req.user._id, slug })) {
@@ -236,8 +274,8 @@ export async function generateUnified(
         isPublished: true,
         isPublic,
         generationStatus: 'complete',
-        landingStatus: 'pending', // Landing page generated later
-        emailsStatus: 'pending', // Emails generated later
+        landingStatus: 'pending', // Landing page generated async
+        emailsStatus: 'ready', // Not generating emails for MVP
       });
 
       // Record usage for billing
@@ -253,11 +291,142 @@ export async function generateUnified(
         success: true,
         data: { leadMagnet },
       });
+
+      // ============================================
+      // Async landing page generation for infographic
+      // ============================================
+      const formAction = `/public/${req.user.username}/${slug}/subscribe`;
+      const finalBrandSettings = brand.settings;
+
+      setImmediate(() => {
+        void (async () => {
+          const leadMagnetId = leadMagnet._id;
+          try {
+            // Create landing page copy for infographic
+            const landingPageCopy = {
+              headline: generatedInfographic.title,
+              subheadline: `Get this beautiful infographic delivered to your inbox`,
+              benefit_bullets: [
+                'High-quality infographic design',
+                'Perfect for sharing on social media',
+                'Download and use for presentations',
+              ],
+              cta: 'Get Free Infographic',
+              short_description: `Download your ${generatedInfographic.title} infographic`,
+              html: '',
+            };
+
+            // Render landing page HTML with brand settings
+            const landingPageHtml = await renderLandingPage(finalBrandSettings, landingPageCopy, formAction);
+
+            // Create delivery email for infographic
+            const deliveryEmail = {
+              title: 'Delivery Email',
+              subject: `Your Infographic: ${generatedInfographic.title}`,
+              body_text: `Hi there!\n\nThanks for your interest in "${generatedInfographic.title}"!\n\nYou can download your infographic here:\n{{INFOGRAPHIC_URL}}\n\nFeel free to share it on social media or use it in your presentations!\n\nEnjoy!\n\n, Powered by MagnetHub`,
+              body_html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #f9fafb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px; margin: 0 auto;">
+    <tr>
+      <td style="padding: 40px 20px;">
+        ${finalBrandSettings.logoUrl ? `
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <tr>
+            <td style="text-align: center; padding-bottom: 30px;">
+              <img src="${finalBrandSettings.logoUrl}" alt="" style="max-height: 50px; max-width: 150px;">
+            </td>
+          </tr>
+        </table>
+        ` : ''}
+        
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+          <tr>
+            <td style="padding: 40px 30px;">
+              <p style="margin: 0 0 20px; font-size: 16px; color: #374151;">Hi there!</p>
+              
+              <p style="margin: 0 0 30px; font-size: 16px; color: #374151;">
+                Thanks for your interest in "<strong>${generatedInfographic.title}</strong>"!
+              </p>
+
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="{{INFOGRAPHIC_URL}}" target="_blank" rel="noopener noreferrer">
+                  <img src="{{INFOGRAPHIC_URL}}" alt="${generatedInfographic.title}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                </a>
+              </div>
+
+              <div style="text-align: center; padding: 30px 0;">
+                <a href="{{INFOGRAPHIC_URL}}" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 16px 32px; background-color: ${finalBrandSettings.primaryColor || '#10B981'}; color: #ffffff; font-size: 16px; font-weight: 600; text-decoration: none; border-radius: 8px;">
+                  Download Infographic
+                </a>
+              </div>
+
+              <p style="margin: 30px 0 0; font-size: 14px; color: #6b7280; text-align: center;">
+                Feel free to share it on social media or use it in your presentations!
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <tr>
+            <td style="text-align: center; padding-top: 30px;">
+              <p style="margin: 0; font-size: 12px; color: #9ca3af;">
+                Powered by <a href="https://magnethubai.com" target="_blank" rel="noopener noreferrer" style="color: #6b7280;">MagnetHub</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+              `.trim(),
+            };
+
+            await LeadMagnet.updateOne(
+              { _id: leadMagnetId },
+              {
+                landingPageHtml,
+                landingPageCopyJson: landingPageCopy,
+                emailsJson: { emails: [deliveryEmail] },
+                landingStatus: 'ready',
+                emailsStatus: 'ready',
+              }
+            );
+
+            logger.info('Infographic landing page and email generated', {
+              leadMagnetId: leadMagnetId.toString(),
+              landingStatus: 'ready',
+              emailsStatus: 'ready',
+            });
+          } catch (error) {
+            logger.error('Infographic landing page generation failed', { 
+              leadMagnetId: leadMagnetId.toString(), 
+              error 
+            });
+            await LeadMagnet.updateOne(
+              { _id: leadMagnetId },
+              {
+                landingStatus: 'failed',
+                emailsStatus: 'failed',
+                generationError: error instanceof Error ? error.message : 'landing_generation_failed',
+              }
+            );
+          }
+        })();
+      });
     } else {
       // ============================================
       // OTHER LEAD MAGNET TYPES (Coming Soon)
       // ============================================
-      
+
       throw AppError.badRequest(`Lead magnet type "${type}" is not yet supported. Only "quiz" and "infographic" are available.`);
     }
   } catch (error) {
@@ -282,7 +451,7 @@ export async function generate(
     // Support both old websiteUrl and new sourceUrl field
     const inputUrl = req.body.sourceUrl || req.body.websiteUrl;
     const { audience, goal, type, tone, brandId } = req.body;
-    
+
     // Auto-detect source type if not provided
     let sourceType: SourceType = req.body.sourceType || 'website';
     if (!req.body.sourceType) {
@@ -292,7 +461,7 @@ export async function generate(
         sourceType = 'instagram';
       }
     }
-    
+
     // Normalize the URL based on source type
     let sourceUrl = inputUrl;
     if (sourceType === 'instagram') {
@@ -326,7 +495,7 @@ export async function generate(
       baseSlug = slugify(hostname, { lower: true, strict: true });
       brandName = hostname;
     }
-    
+
     let slug = baseSlug;
     let counter = 1;
 
@@ -339,7 +508,7 @@ export async function generate(
     // ============================================
     // Brand Management (Multi-Brand Support)
     // ============================================
-    
+
     let brand: IBrand | null = null;
     let brandToUse: IBrandSettings | null = null;
     let useCachedData = false;
@@ -352,21 +521,21 @@ export async function generate(
       }
       brandToUse = brand.settings;
       useCachedData = !!brand.description; // Use cache if we have description
-      logger.info('Using specified brand', { 
-        brandId: brand._id, 
+      logger.info('Using specified brand', {
+        brandId: brand._id,
         brandName: brand.name,
         hasCache: useCachedData,
       });
     } else {
       // Find existing brand based on source URL
       brand = await Brand.findOne({ userId: req.user._id, sourceUrl });
-      
+
       if (brand) {
         // Existing brand found - use its settings
         brandToUse = brand.settings;
         useCachedData = !!brand.description; // Use cache if we have description
-        logger.info('Using existing brand for source', { 
-          brandId: brand._id, 
+        logger.info('Using existing brand for source', {
+          brandId: brand._id,
           brandName: brand.name,
           hasCache: useCachedData,
         });
@@ -390,20 +559,20 @@ export async function generate(
     // Create brand if it doesn't exist
     if (!brand) {
       const brandSettings: IBrandSettings = { ...phase1.extractedBrand };
-      
+
       // For Instagram, use profile picture as logo
       if (sourceType === 'instagram' && phase1.instagramProfilePic) {
         brandSettings.logoUrl = phase1.instagramProfilePic;
       }
-      
+
       // For YouTube, use channel thumbnail as logo
       if (sourceType === 'youtube' && phase1.youtubeThumbnail) {
         brandSettings.logoUrl = phase1.youtubeThumbnail;
       }
-      
+
       // Check if this is the first brand
       const brandCount = await Brand.countDocuments({ userId: req.user._id });
-      
+
       brand = await Brand.create({
         userId: req.user._id,
         name: brandName,
@@ -413,10 +582,10 @@ export async function generate(
         settings: brandSettings,
         isDefault: brandCount === 0, // First brand is default
       });
-      
+
       brandToUse = brandSettings;
-      logger.info('Created new brand from source', { 
-        brandId: brand._id, 
+      logger.info('Created new brand from source', {
+        brandId: brand._id,
         brandName: brand.name,
         sourceType,
         hasLogo: !!brandSettings.logoUrl,
@@ -443,10 +612,10 @@ export async function generate(
     // Get user's subscription to determine privacy setting
     const subscription = await billingService.getOrCreateSubscription(req.user._id.toString());
     const userDoc = await User.findById(req.user._id);
-    
+
     // Determine if lead magnet should be public
-    const isPublic = subscription.plan === 'free' 
-      ? true 
+    const isPublic = subscription.plan === 'free'
+      ? true
       : (userDoc?.defaultLeadMagnetPrivacy !== 'private');
 
     // Create lead magnet record with brand reference
@@ -532,9 +701,9 @@ export async function generate(
           const generationError =
             generationStatus === 'needs_attention'
               ? [
-                  landingStatus === 'failed' ? 'landing_failed' : null,
-                  emailsStatus === 'failed' ? 'emails_failed' : null,
-                ].filter(Boolean).join(',')
+                landingStatus === 'failed' ? 'landing_failed' : null,
+                emailsStatus === 'failed' ? 'emails_failed' : null,
+              ].filter(Boolean).join(',')
               : undefined;
 
           await LeadMagnet.updateOne(
@@ -645,6 +814,56 @@ export async function getOne(
 }
 
 // ============================================
+// Update Lead Magnet
+// ============================================
+
+export async function update(
+  req: AuthenticatedRequest,
+  res: Response<ApiResponse<{ leadMagnet: ILeadMagnet }>>,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw AppError.unauthorized();
+    }
+
+    const { id } = req.params;
+    const { title } = req.body;
+
+    const leadMagnet = await LeadMagnet.findOne({
+      _id: id,
+      userId: req.user._id,
+    });
+
+    if (!leadMagnet) {
+      throw AppError.notFound('Lead magnet not found');
+    }
+
+    // Update fields
+    if (title !== undefined) {
+      leadMagnet.title = title;
+    }
+
+    await leadMagnet.save();
+
+    const leadMagnetWithSignedUrl = await attachSignedUrls(leadMagnet.toObject());
+
+    logger.info('Lead magnet updated', {
+      userId: req.user._id,
+      leadMagnetId: id,
+      updates: { title },
+    });
+
+    res.json({
+      success: true,
+      data: { leadMagnet: leadMagnetWithSignedUrl },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ============================================
 // Delete Lead Magnet
 // ============================================
 
@@ -670,8 +889,8 @@ export async function remove(
     }
 
     // Delete associated files from R2
-    const { deletePdf, deleteImage } = await import('../services/storageService.js');
-    
+    const { deletePdf, deleteImage, deleteFile: deleteR2File } = await import('../services/storageService.js');
+
     // Delete PDF if it exists
     if (leadMagnet.pdfUrl) {
       try {
@@ -684,7 +903,7 @@ export async function remove(
         });
       }
     }
-    
+
     // Delete infographic if it exists
     if (leadMagnet.infographicUrl) {
       try {
@@ -694,6 +913,19 @@ export async function remove(
         logger.warn('Failed to delete infographic from R2 (non-fatal)', {
           error: error instanceof Error ? error.message : String(error),
           infographicUrl: leadMagnet.infographicUrl,
+        });
+      }
+    }
+
+    // Delete uploaded file if it exists
+    if (leadMagnet.uploadedFileUrl) {
+      try {
+        await deleteR2File(leadMagnet.uploadedFileUrl);
+        logger.info('Uploaded file deleted from R2', { uploadedFileUrl: leadMagnet.uploadedFileUrl });
+      } catch (error) {
+        logger.warn('Failed to delete uploaded file from R2 (non-fatal)', {
+          error: error instanceof Error ? error.message : String(error),
+          uploadedFileUrl: leadMagnet.uploadedFileUrl,
         });
       }
     }
@@ -799,7 +1031,7 @@ export async function getAllLeads(
       .sort({ createdAt: -1 });
 
     // Get all quiz responses with emails (quiz leads)
-    const quizResponses = await QuizResponse.find({ 
+    const quizResponses = await QuizResponse.find({
       quizId: { $in: quizIds },
       email: { $exists: true, $ne: '' }
     }).sort({ createdAt: -1 });
@@ -840,7 +1072,7 @@ export async function getAllLeads(
     }));
 
     // Combine and sort by creation date
-    const allLeads = [...enrichedLeads, ...enrichedQuizLeads].sort((a, b) => 
+    const allLeads = [...enrichedLeads, ...enrichedQuizLeads].sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
 
@@ -886,19 +1118,19 @@ export async function exportAllLeadsCsv(
       .sort({ createdAt: -1 });
 
     // Get all quiz responses with emails
-    const quizResponses = await QuizResponse.find({ 
+    const quizResponses = await QuizResponse.find({
       quizId: { $in: quizIds },
       email: { $exists: true, $ne: '' }
     }).sort({ createdAt: -1 });
 
     // Generate CSV
     const csvHeader = 'email,lead_magnet,type,captured_at,delivery_status\n';
-    
-    const leadRows = leads.map(lead => 
+
+    const leadRows = leads.map(lead =>
       `${lead.email},"${magnetMap.get(lead.leadMagnetId.toString()) || 'Unknown'}",PDF,${lead.createdAt.toISOString()},${lead.deliveryStatus}`
     );
 
-    const quizRows = quizResponses.map(response => 
+    const quizRows = quizResponses.map(response =>
       `${response.email},"${quizMap.get(response.quizId.toString()) || 'Unknown'}",Quiz,${response.createdAt.toISOString()},${response.emailDeliveryStatus}`
     );
 
@@ -950,7 +1182,7 @@ export async function exportLeadsCsv(
 
     // Generate CSV
     const csvHeader = 'email,captured_at,delivery_status\n';
-    const csvRows = leads.map(lead => 
+    const csvRows = leads.map(lead =>
       `${lead.email},${lead.createdAt.toISOString()},${lead.deliveryStatus}`
     ).join('\n');
 
@@ -996,7 +1228,7 @@ export async function regeneratePdf(
     // Get brand settings if available
     let brandSettings: IBrandSettings | undefined;
     let brandName: string | undefined;
-    
+
     if (leadMagnet.brandId) {
       const brand = await Brand.findById(leadMagnet.brandId);
       if (brand) {
@@ -1011,7 +1243,7 @@ export async function regeneratePdf(
     // Upload new PDF (works with both local and cloud storage)
     const filename = `pdfs/${req.user._id}/${leadMagnet.slug}-${uuidv4().slice(0, 8)}.pdf`;
     const pdfUrl = await uploadPdf(pdfBuffer, filename);
-    
+
     leadMagnet.pdfUrl = pdfUrl;
     await leadMagnet.save();
 
@@ -1024,6 +1256,217 @@ export async function regeneratePdf(
     res.json({
       success: true,
       data: { pdfUrl },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ============================================
+// Upload Media (User-uploaded files)
+// ============================================
+
+// Allowed MIME types and their corresponding file types
+const ALLOWED_MIME_TYPES: Record<string, { fileType: UploadedFileType; folder: 'uploads/pdf' | 'uploads/image' | 'uploads/audio'; leadMagnetType: LeadMagnetType }> = {
+  'application/pdf': { fileType: 'pdf', folder: 'uploads/pdf', leadMagnetType: 'uploaded_pdf' },
+  'image/png': { fileType: 'image', folder: 'uploads/image', leadMagnetType: 'uploaded_image' },
+  'image/jpeg': { fileType: 'image', folder: 'uploads/image', leadMagnetType: 'uploaded_image' },
+  'image/webp': { fileType: 'image', folder: 'uploads/image', leadMagnetType: 'uploaded_image' },
+  'audio/mpeg': { fileType: 'audio', folder: 'uploads/audio', leadMagnetType: 'uploaded_audio' },
+  'audio/mp3': { fileType: 'audio', folder: 'uploads/audio', leadMagnetType: 'uploaded_audio' },
+};
+
+// Max file sizes in bytes
+const MAX_FILE_SIZES: Record<UploadedFileType, number> = {
+  pdf: 20 * 1024 * 1024, // 20MB
+  image: 10 * 1024 * 1024, // 10MB
+  audio: 20 * 1024 * 1024, // 20MB
+};
+
+export async function uploadMedia(
+  req: AuthenticatedRequest,
+  res: Response<ApiResponse<{ leadMagnet: ILeadMagnet }>>,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw AppError.unauthorized();
+    }
+
+    // multer adds file to req.file
+    const file = req.file;
+    if (!file) {
+      throw AppError.badRequest('No file uploaded');
+    }
+
+    const { title, description, brandId } = req.body;
+
+    // Validate required fields
+    if (!title || typeof title !== 'string' || title.trim().length === 0) {
+      throw AppError.badRequest('Title is required');
+    }
+
+    if (!brandId) {
+      throw AppError.badRequest('Brand ID is required');
+    }
+
+    // Validate brand exists and belongs to user
+    const brand = await Brand.findOne({ _id: brandId, userId: req.user._id });
+    if (!brand) {
+      throw AppError.badRequest('Brand not found');
+    }
+
+    // Validate file type
+    const mimeTypeConfig = ALLOWED_MIME_TYPES[file.mimetype];
+    if (!mimeTypeConfig) {
+      throw AppError.badRequest(
+        `File type not supported. Allowed types: PDF, PNG, JPG, WebP, MP3`
+      );
+    }
+
+    // Validate file size
+    const maxSize = MAX_FILE_SIZES[mimeTypeConfig.fileType];
+    if (file.size > maxSize) {
+      const maxSizeMB = Math.round(maxSize / (1024 * 1024));
+      throw AppError.badRequest(
+        `File too large. Maximum size for ${mimeTypeConfig.fileType} files is ${maxSizeMB}MB`
+      );
+    }
+
+    // Get user's subscription to determine privacy setting
+    const subscription = await billingService.getOrCreateSubscription(req.user._id.toString());
+    const userDoc = await User.findById(req.user._id);
+
+    // Determine if lead magnet should be public
+    const isPublic = subscription.plan === 'free'
+      ? true
+      : (userDoc?.defaultLeadMagnetPrivacy !== 'private');
+
+    logger.info('Uploading user media file', {
+      userId: req.user._id,
+      brandId: brand._id,
+      fileType: mimeTypeConfig.fileType,
+      fileName: file.originalname,
+      fileSize: file.size,
+      mimeType: file.mimetype,
+    });
+
+    // Upload to R2
+    const uploadedUrl = await uploadFile({
+      buffer: file.buffer,
+      mimeType: file.mimetype,
+      originalFilename: file.originalname,
+      folder: mimeTypeConfig.folder,
+      userId: req.user._id.toString(),
+    });
+
+    // Generate unique slug from title
+    const baseSlug = slugify(title.trim(), { lower: true, strict: true });
+    let slug = baseSlug;
+    let counter = 1;
+    while (await LeadMagnet.findOne({ userId: req.user._id, slug })) {
+      slug = `${baseSlug}-${counter}`;
+      counter++;
+    }
+
+    // Create lead magnet record
+    const leadMagnet = await LeadMagnet.create({
+      userId: req.user._id,
+      brandId: brand._id,
+      type: mimeTypeConfig.leadMagnetType,
+      title: title.trim(),
+      description: description?.trim() || undefined,
+      slug,
+      isPublished: true,
+      isPublic,
+      // User-uploaded media fields
+      isUserUploaded: true,
+      uploadedFileUrl: uploadedUrl,
+      uploadedFileName: file.originalname,
+      uploadedFileType: mimeTypeConfig.fileType,
+      uploadedFileMimeType: file.mimetype,
+      uploadedFileSize: file.size,
+      // Set generation status - landing page will be generated async
+      generationStatus: 'complete',
+      landingStatus: 'pending',
+      emailsStatus: 'ready', // Not generating emails for MVP
+    });
+
+    // Record usage for billing
+    await billingService.recordLeadMagnetUsage(req.user._id.toString());
+
+    const leadMagnetWithSignedUrl = await attachSignedUrls(leadMagnet.toObject());
+
+    logger.info('User media uploaded successfully', {
+      userId: req.user._id,
+      leadMagnetId: leadMagnet._id,
+      brandId: brand._id,
+      slug,
+      fileType: mimeTypeConfig.fileType,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: { leadMagnet: leadMagnetWithSignedUrl },
+    });
+
+    // ============================================
+    // Async generation (landing page copy for uploaded media)
+    // ============================================
+    const formAction = `/public/${req.user.username}/${slug}/subscribe`;
+    const finalBrandSettings = brand.settings;
+    const finalTitle = title.trim();
+    const finalDescription = description?.trim() || `Download this ${mimeTypeConfig.fileType} resource`;
+    const fileTypeLabel = mimeTypeConfig.fileType === 'pdf' ? 'PDF' :
+      mimeTypeConfig.fileType === 'image' ? 'image' : 'audio';
+
+    setImmediate(() => {
+      void (async () => {
+        const leadMagnetId = leadMagnet._id;
+        try {
+          // Create basic landing page copy for uploaded media
+          const landingPageCopy = {
+            headline: finalTitle,
+            subheadline: finalDescription,
+            benefit_bullets: [
+              `Get instant access to this ${fileTypeLabel} resource`,
+              'Download directly to your device',
+              'Share with colleagues and friends',
+            ],
+            cta: 'Get Free Access',
+            short_description: finalDescription,
+            html: '', // Will be rendered by templateService
+          };
+
+          // Render landing page HTML with brand settings
+          const landingPageHtml = await renderLandingPage(finalBrandSettings, landingPageCopy, formAction);
+
+          await LeadMagnet.updateOne(
+            { _id: leadMagnetId },
+            {
+              landingPageHtml,
+              landingPageCopyJson: landingPageCopy,
+              landingStatus: 'ready',
+              emailsStatus: 'ready', // Mark as ready since we're not generating emails for MVP
+            }
+          );
+
+          logger.info('Uploaded media landing page generated', {
+            leadMagnetId: leadMagnetId.toString(),
+            landingStatus: 'ready',
+          });
+        } catch (error) {
+          logger.error('Uploaded media landing page generation failed', { leadMagnetId: leadMagnetId.toString(), error });
+          await LeadMagnet.updateOne(
+            { _id: leadMagnetId },
+            {
+              landingStatus: 'failed',
+              emailsStatus: 'ready', // Not generating emails, so mark as ready
+              generationError: error instanceof Error ? error.message : 'landing_generation_failed',
+            }
+          );
+        }
+      })();
     });
   } catch (error) {
     next(error);

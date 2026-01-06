@@ -67,7 +67,7 @@ function generatePdfHtml(
   brand: IBrandSettings,
   brandName?: string
 ): string {
-  const typeLabels: Record<LeadMagnetType, string> = {
+  const typeLabels: Partial<Record<LeadMagnetType, string>> = {
     guide: 'GUIDE',
     checklist: 'CHECKLIST',
     mistakes: 'COMMON MISTAKES',
@@ -76,6 +76,10 @@ function generatePdfHtml(
     cheatsheet: 'CHEAT SHEET',
     casestudy: 'CASE STUDY',
     infographic: 'INFOGRAPHIC',
+    // uploaded types don't need labels for PDF generation - they're user-provided files
+    uploaded_pdf: 'PDF',
+    uploaded_image: 'IMAGE',
+    uploaded_audio: 'AUDIO',
   };
 
   // Determine if we're in dark or light mode based on background

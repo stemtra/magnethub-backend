@@ -147,8 +147,12 @@ export type LeadMagnetType =
   | 'swipefile'
   | 'cheatsheet'
   | 'casestudy'
-  | 'infographic';
+  | 'infographic'
+  | 'uploaded_pdf'
+  | 'uploaded_image'
+  | 'uploaded_audio';
 export type LeadMagnetTone = 'professional' | 'friendly' | 'expert' | 'persuasive';
+export type UploadedFileType = 'pdf' | 'image' | 'audio';
 export type InfographicStyle = 'minimal' | 'modern' | 'bold' | 'professional';
 export type InfographicOrientation = 'square' | 'portrait' | 'landscape';
 
@@ -184,6 +188,14 @@ export interface ILeadMagnet extends Document {
   title?: string;
   isPublished: boolean;
   isPublic: boolean;
+  // User-uploaded media fields
+  isUserUploaded?: boolean;
+  uploadedFileUrl?: string;
+  uploadedFileName?: string;
+  uploadedFileType?: UploadedFileType;
+  uploadedFileMimeType?: string;
+  uploadedFileSize?: number; // bytes
+  description?: string;
   createdAt: Date;
   updatedAt: Date;
 }

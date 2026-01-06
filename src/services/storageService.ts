@@ -441,3 +441,169 @@ export async function deleteImage(url: string): Promise<void> {
   }
 }
 
+// ============================================
+// Generic File Upload (for user-uploaded media)
+// ============================================
+
+export interface UploadFileOptions {
+  buffer: Buffer;
+  mimeType: string;
+  originalFilename: string;
+  folder: 'uploads/pdf' | 'uploads/image' | 'uploads/audio';
+  userId: string;
+}
+
+export async function uploadFile(options: UploadFileOptions): Promise<string> {
+  const { buffer, mimeType, originalFilename, folder, userId } = options;
+
+  if (!isCloudStorageConfigured()) {
+    throw AppError.internal('Cloud storage is not configured. Cannot upload file.');
+  }
+
+  const publicBaseUrl = getR2PublicBaseUrl();
+
+  if (!publicBaseUrl) {
+    logger.error('Cloud storage base URL is missing even though credentials are present.');
+    throw AppError.internal('Cloud storage base URL missing. Cannot upload file.');
+  }
+
+  // Generate a safe filename
+  const extension = originalFilename.split('.').pop()?.toLowerCase() || '';
+  const safeBasename = originalFilename
+    .replace(/\.[^/.]+$/, '') // Remove extension
+    .replace(/[^a-zA-Z0-9-_]/g, '_') // Replace unsafe chars
+    .substring(0, 50); // Limit length
+  const uniqueId = uuidv4().slice(0, 8);
+  const key = `${folder}/${userId}/${safeBasename}-${uniqueId}.${extension}`;
+
+  logger.info('Uploading file to cloud storage', {
+    key,
+    sizeKB: Math.round(buffer.length / 1024),
+    bucket: config.r2.bucketName,
+    mimeType,
+    originalFilename,
+  });
+
+  try {
+    await getS3Client().send(new PutObjectCommand({
+      Bucket: config.r2.bucketName,
+      Key: key,
+      Body: buffer,
+      ContentType: mimeType,
+      CacheControl: 'public, max-age=31536000',
+    }));
+
+    const publicUrl = `${publicBaseUrl}/${key}`;
+    
+    logger.info('File uploaded to cloud successfully', { key, url: publicUrl });
+    
+    return publicUrl;
+  } catch (error) {
+    logger.error('Failed to upload file to cloud', {
+      error,
+      bucket: config.r2.bucketName,
+      accountId: config.r2.accountId,
+      key,
+    });
+    throw AppError.internal('Failed to upload file. Please try again.');
+  }
+}
+
+// ============================================
+// Get Signed File URL (generic for any file type)
+// ============================================
+
+export async function getSignedFileUrl(
+  storedUrl: string,
+  mimeType: string,
+  expiresInSeconds = 60 * 60 * 24 * 7 // 7 days default
+): Promise<string> {
+  if (!isCloudStorageConfigured()) {
+    logger.warn('Cloud storage not configured when requesting signed file URL; returning original URL.');
+    return storedUrl;
+  }
+
+  const key = getR2ObjectKeyFromUrl(storedUrl);
+  if (!key) {
+    logger.warn('Unable to derive R2 object key from stored URL; returning original URL.', { storedUrl });
+    return storedUrl;
+  }
+
+  // Derive a friendly filename for the Content-Disposition header
+  const filename = key.split('/').pop() || 'download';
+  const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+  try {
+    const signedUrl = await getSignedUrl(
+      getS3Client(),
+      new GetObjectCommand({
+        Bucket: config.r2.bucketName,
+        Key: key,
+        ResponseContentDisposition: `inline; filename="${safeFilename}"`,
+        ResponseContentType: mimeType,
+      }),
+      { expiresIn: expiresInSeconds }
+    );
+
+    logger.info('Generated signed file URL', {
+      key,
+      safeFilename,
+      bucket: config.r2.bucketName,
+      expiresInSeconds,
+      mimeType,
+    });
+
+    return signedUrl;
+  } catch (error) {
+    logger.error('Failed to generate signed file URL; returning original URL.', {
+      error,
+      key,
+      bucket: config.r2.bucketName,
+    });
+    return storedUrl;
+  }
+}
+
+// ============================================
+// Delete File (generic)
+// ============================================
+
+export async function deleteFile(url: string): Promise<void> {
+  try {
+    if (!isCloudStorageConfigured()) {
+      logger.error('Cloud storage not configured; cannot delete file from R2', { url });
+      throw AppError.internal('Cloud storage is not configured. Cannot delete file.');
+    }
+
+    const publicBaseUrl = getR2PublicBaseUrl();
+
+    if (!publicBaseUrl) {
+      logger.error('Cloud storage configured but no public base URL; cannot delete file.', { url });
+      throw AppError.internal('Cloud storage base URL missing. Cannot delete file.');
+    }
+
+    // Extract the key from the URL
+    const normalizedBase = `${publicBaseUrl}/`;
+    const key = url.startsWith(normalizedBase)
+      ? url.slice(normalizedBase.length)
+      : url.replace(`${config.r2.publicUrl}/`, '');
+    
+    logger.info('Deleting file from cloud storage', { key, bucket: config.r2.bucketName });
+
+    await getS3Client().send(new DeleteObjectCommand({
+      Bucket: config.r2.bucketName,
+      Key: key,
+    }));
+
+    logger.info('Cloud file deleted successfully', { key });
+  } catch (error) {
+    logger.error('Failed to delete file', {
+      error,
+      url,
+      bucket: config.r2.bucketName,
+      accountId: config.r2.accountId,
+    });
+    // Don't throw - deletion failures shouldn't break the flow
+  }
+}
+

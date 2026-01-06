@@ -1,11 +1,38 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
 import { validateBody, validateParams } from '../middleware/validate.js';
 import { isAuthenticated } from '../middleware/auth.js';
 import { checkGenerationLimit, requireBillingHealthy } from '../middleware/rateLimit.js';
 import * as leadMagnetController from '../controllers/leadMagnetController.js';
 
 const router = Router();
+
+// ============================================
+// Multer configuration for file uploads
+// ============================================
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB max (will be validated per type in controller)
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimeTypes = [
+      'application/pdf',
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'audio/mpeg',
+      'audio/mp3',
+    ];
+    if (allowedMimeTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('File type not supported. Allowed types: PDF, PNG, JPG, WebP, MP3'));
+    }
+  },
+});
 
 // ============================================
 // Validation Schemas
@@ -59,7 +86,7 @@ const idParamSchema = z.object({
 // New unified generation schema (topic-based)
 const generateUnifiedSchema = z.object({
   brandId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid brand ID'),
-  topic: z.string().min(3, 'Topic must be at least 3 characters').max(500, 'Topic too long'),
+  topic: z.string().min(3, 'Topic must be at least 3 characters').max(1500, 'Topic too long'),
   type: z.enum(['quiz', 'guide', 'checklist', 'mistakes', 'blueprint', 'swipefile', 'cheatsheet', 'casestudy', 'infographic']),
   // Quiz-specific fields
   numQuestions: z.number().int().min(3).max(20).optional(),
@@ -101,6 +128,12 @@ router.post('/generate-unified', requireBillingHealthy, checkGenerationLimit, va
 router.post('/generate', requireBillingHealthy, checkGenerationLimit, validateBody(generateSchema), leadMagnetController.generate);
 
 /**
+ * POST /api/lead-magnets/upload
+ * Upload a user's own media file as a lead magnet
+ */
+router.post('/upload', requireBillingHealthy, checkGenerationLimit, upload.single('file'), leadMagnetController.uploadMedia);
+
+/**
  * GET /api/lead-magnets
  * Get all lead magnets for the authenticated user
  */
@@ -123,6 +156,15 @@ router.get('/leads/export', requireBillingHealthy, leadMagnetController.exportAl
  * Get a single lead magnet by ID
  */
 router.get('/:id', validateParams(idParamSchema), leadMagnetController.getOne);
+
+/**
+ * PATCH /api/lead-magnets/:id
+ * Update a lead magnet
+ */
+const updateSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+});
+router.patch('/:id', validateParams(idParamSchema), validateBody(updateSchema), leadMagnetController.update);
 
 /**
  * DELETE /api/lead-magnets/:id

@@ -5,7 +5,7 @@ import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
 import { PageView } from '../models/PageView.js';
 import { sendDeliveryEmail } from '../services/emailService.js';
-import { getSignedPdfUrl, getSignedImageUrl } from '../services/storageService.js';
+import { getSignedPdfUrl, getSignedImageUrl, getSignedFileUrl } from '../services/storageService.js';
 import { renderLandingPage, DEFAULT_BRAND_SETTINGS } from '../services/templateService.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
@@ -28,9 +28,9 @@ function detectSource(req: Request): SourceInfo {
   const utmSource = req.query.utm_source as string | undefined;
   const utmMedium = req.query.utm_medium as string | undefined;
   const utmCampaign = req.query.utm_campaign as string | undefined;
-  
+
   const referrer = req.headers.referer || req.headers.referrer as string | undefined;
-  
+
   if (utmSource) {
     return {
       source: utmSource.toLowerCase(),
@@ -39,16 +39,16 @@ function detectSource(req: Request): SourceInfo {
       referrer,
     };
   }
-  
+
   // No referrer = direct traffic
   if (!referrer) {
     return { source: 'direct', referrer: undefined };
   }
-  
+
   try {
     const url = new URL(referrer);
     const host = url.hostname.toLowerCase();
-    
+
     // Match known sources
     if (host.includes('google')) return { source: 'google', medium: 'organic', referrer };
     if (host.includes('bing')) return { source: 'bing', medium: 'organic', referrer };
@@ -65,7 +65,7 @@ function detectSource(req: Request): SourceInfo {
     if (host.includes('reddit')) return { source: 'reddit', medium: 'social', referrer };
     if (host.includes('tiktok')) return { source: 'tiktok', medium: 'social', referrer };
     if (host.includes('pinterest')) return { source: 'pinterest', medium: 'social', referrer };
-    
+
     // Return the domain as source for unknown referrers
     return { source: host.replace('www.', ''), medium: 'referral', referrer };
   } catch {
@@ -182,7 +182,7 @@ export async function getLandingPageData(
     });
 
     // Return data for frontend rendering
-    const leadMagnetData = {
+    const leadMagnetData: Partial<ILeadMagnet> & { signedUploadedFileUrl?: string } = {
       _id: leadMagnet._id,
       title: leadMagnet.title,
       slug: leadMagnet.slug,
@@ -191,9 +191,34 @@ export async function getLandingPageData(
       infographicUrl: leadMagnet.infographicUrl,
       infographicStyle: leadMagnet.infographicStyle,
       infographicOrientation: leadMagnet.infographicOrientation,
+      // User-uploaded media fields
+      isUserUploaded: leadMagnet.isUserUploaded,
+      uploadedFileType: leadMagnet.uploadedFileType,
+      uploadedFileName: leadMagnet.uploadedFileName,
+      description: leadMagnet.description,
     };
 
-    const brandSettings = user.brandSettings || DEFAULT_BRAND_SETTINGS;
+    // Generate signed URL for image preview if uploaded image
+    if (leadMagnet.isUserUploaded && leadMagnet.uploadedFileUrl && leadMagnet.uploadedFileMimeType) {
+      if (leadMagnet.uploadedFileType === 'image') {
+        leadMagnetData.signedUploadedFileUrl = await getSignedFileUrl(
+          leadMagnet.uploadedFileUrl,
+          leadMagnet.uploadedFileMimeType,
+          60 * 60 // 1 hour for previews
+        );
+      }
+    }
+
+    // Get brand settings - prefer brand from brandId, fall back to user.brandSettings
+    let brandSettings: IBrandSettings = DEFAULT_BRAND_SETTINGS;
+    if (leadMagnet.brandId) {
+      const brand = await Brand.findById(leadMagnet.brandId);
+      if (brand?.settings) {
+        brandSettings = brand.settings;
+      }
+    } else if (user.brandSettings) {
+      brandSettings = user.brandSettings;
+    }
 
     res.json({
       success: true,
@@ -258,13 +283,22 @@ export async function serveLandingPage(
 
     // If we have landing page copy, render using template with user's brand
     if (leadMagnet.landingPageCopyJson) {
-      const brandSettings = user.brandSettings || DEFAULT_BRAND_SETTINGS;
+      // Get brand settings - prefer brand from brandId, fall back to user.brandSettings
+      let brandSettings: IBrandSettings = DEFAULT_BRAND_SETTINGS;
+      if (leadMagnet.brandId) {
+        const brand = await Brand.findById(leadMagnet.brandId);
+        if (brand?.settings) {
+          brandSettings = brand.settings;
+        }
+      } else if (user.brandSettings) {
+        brandSettings = user.brandSettings;
+      }
       // When served on a username subdomain (publicSubdomain router), keep the
       // form action relative to that origin (/{slug}/subscribe). When served via
       // /public/:username/:slug, keep the legacy /public/... action.
       const isPublicPath = req.baseUrl === '/public';
       const formAction = isPublicPath ? `/public/${username}/${slug}/subscribe` : `/${slug}/subscribe`;
-      
+
       html = await renderLandingPage(
         brandSettings,
         leadMagnet.landingPageCopyJson as ILandingPageCopy,
@@ -387,32 +421,74 @@ export async function subscribe(
     });
 
     // Send delivery email asynchronously
-    if (leadMagnet.emailsJson?.emails?.[0]) {
+    if (leadMagnet.isUserUploaded && leadMagnet.uploadedFileUrl && leadMagnet.uploadedFileMimeType) {
+      // User-uploaded file - generate simple delivery email
+      const signedFileUrl = await getSignedFileUrl(
+        leadMagnet.uploadedFileUrl,
+        leadMagnet.uploadedFileMimeType,
+        60 * 60 * 24 * 7 // 7 days
+      );
+
+      const title = leadMagnet.title || 'Your Download';
+      const description = leadMagnet.description || '';
+      const fileTypeLabel = leadMagnet.uploadedFileType === 'pdf' ? 'PDF'
+        : leadMagnet.uploadedFileType === 'image' ? 'Image'
+          : leadMagnet.uploadedFileType === 'audio' ? 'Audio File'
+            : 'File';
+
+      const subject = `Your ${fileTypeLabel}: ${title}`;
+      const bodyHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1 style="color: #333;">${title}</h1>
+          ${description ? `<p style="color: #666; margin-bottom: 24px;">${description}</p>` : ''}
+          <p style="color: #333; margin-bottom: 24px;">Here's your download:</p>
+          <p style="margin-bottom: 24px;">
+            <a href="${signedFileUrl}" 
+               style="display: inline-block; background-color: #10B981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
+              Download ${fileTypeLabel}
+            </a>
+          </p>
+          <p style="color: #999; font-size: 14px;">This link expires in 7 days.</p>
+        </div>
+      `;
+      const bodyText = `${title}\n\n${description ? description + '\n\n' : ''}Download your ${fileTypeLabel.toLowerCase()} here: ${signedFileUrl}\n\nThis link expires in 7 days.`;
+
+      // Don't await - send in background
+      sendDeliveryEmail(
+        lead._id.toString(),
+        email.toLowerCase(),
+        subject,
+        bodyHtml,
+        bodyText
+      ).catch((error: unknown) => {
+        logger.error('Failed to send delivery email for uploaded file', error);
+      });
+    } else if (leadMagnet.emailsJson?.emails?.[0]) {
       const deliveryEmail: IEmail = leadMagnet.emailsJson.emails[0];
 
       // The stored PDF/Infographic URLs may point at the R2 API hostname (requires auth).
       // For emails, always convert them to time-limited signed URLs so recipients can open them.
       const storedPdfUrl = typeof leadMagnet.pdfUrl === 'string' ? leadMagnet.pdfUrl : '';
       const signedPdfUrl = storedPdfUrl ? await getSignedPdfUrl(storedPdfUrl, 60 * 60 * 24 * 7) : '';
-      
+
       const storedInfographicUrl = typeof leadMagnet.infographicUrl === 'string' ? leadMagnet.infographicUrl : '';
       const signedInfographicUrl = storedInfographicUrl ? await getSignedImageUrl(storedInfographicUrl, 60 * 60 * 24 * 7) : '';
-      
+
       let bodyHtml = deliveryEmail.body_html;
       let bodyText = deliveryEmail.body_text;
-      
+
       // Replace PDF URL
       if (signedPdfUrl) {
         bodyHtml = bodyHtml.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl);
         bodyText = bodyText.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl);
       }
-      
+
       // Replace Infographic URL
       if (signedInfographicUrl) {
         bodyHtml = bodyHtml.replaceAll('{{INFOGRAPHIC_URL}}', signedInfographicUrl).replaceAll(storedInfographicUrl, signedInfographicUrl);
         bodyText = bodyText.replaceAll('{{INFOGRAPHIC_URL}}', signedInfographicUrl).replaceAll(storedInfographicUrl, signedInfographicUrl);
       }
-      
+
       // Don't await - send in background
       sendDeliveryEmail(
         lead._id.toString(),
@@ -856,17 +932,72 @@ export async function subscribeApi(
         source: sourceInfo.source,
       });
 
-      if (leadMagnet.emailsJson?.emails?.[0]) {
+      if (leadMagnet.isUserUploaded && leadMagnet.uploadedFileUrl && leadMagnet.uploadedFileMimeType) {
+        // User-uploaded file - generate simple delivery email
+        const signedFileUrl = await getSignedFileUrl(
+          leadMagnet.uploadedFileUrl,
+          leadMagnet.uploadedFileMimeType,
+          60 * 60 * 24 * 7 // 7 days
+        );
+
+        const title = leadMagnet.title || 'Your Download';
+        const description = leadMagnet.description || '';
+        const fileTypeLabel = leadMagnet.uploadedFileType === 'pdf' ? 'PDF'
+          : leadMagnet.uploadedFileType === 'image' ? 'Image'
+            : leadMagnet.uploadedFileType === 'audio' ? 'Audio File'
+              : 'File';
+
+        const subject = `Your ${fileTypeLabel}: ${title}`;
+        const bodyHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #333;">${title}</h1>
+            ${description ? `<p style="color: #666; margin-bottom: 24px;">${description}</p>` : ''}
+            <p style="color: #333; margin-bottom: 24px;">Here's your download:</p>
+            <p style="margin-bottom: 24px;">
+              <a href="${signedFileUrl}" 
+                 style="display: inline-block; background-color: #10B981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
+                Download ${fileTypeLabel}
+              </a>
+            </p>
+            <p style="color: #999; font-size: 14px;">This link expires in 7 days.</p>
+          </div>
+        `;
+        const bodyText = `${title}\n\n${description ? description + '\n\n' : ''}Download your ${fileTypeLabel.toLowerCase()} here: ${signedFileUrl}\n\nThis link expires in 7 days.`;
+
+        sendDeliveryEmail(
+          lead._id.toString(),
+          email.toLowerCase(),
+          subject,
+          bodyHtml,
+          bodyText
+        ).catch((error: unknown) => {
+          logger.error('Failed to send delivery email for uploaded file', error);
+        });
+      } else if (leadMagnet.emailsJson?.emails?.[0]) {
         const deliveryEmail: IEmail = leadMagnet.emailsJson.emails[0];
 
+        // The stored PDF/Infographic URLs may point at the R2 API hostname (requires auth).
+        // For emails, always convert them to time-limited signed URLs so recipients can open them.
         const storedPdfUrl = typeof leadMagnet.pdfUrl === 'string' ? leadMagnet.pdfUrl : '';
         const signedPdfUrl = storedPdfUrl ? await getSignedPdfUrl(storedPdfUrl, 60 * 60 * 24 * 7) : '';
-        const bodyHtml = signedPdfUrl
-          ? deliveryEmail.body_html.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl)
-          : deliveryEmail.body_html;
-        const bodyText = signedPdfUrl
-          ? deliveryEmail.body_text.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl)
-          : deliveryEmail.body_text;
+
+        const storedInfographicUrl = typeof leadMagnet.infographicUrl === 'string' ? leadMagnet.infographicUrl : '';
+        const signedInfographicUrl = storedInfographicUrl ? await getSignedImageUrl(storedInfographicUrl, 60 * 60 * 24 * 7) : '';
+
+        let bodyHtml = deliveryEmail.body_html;
+        let bodyText = deliveryEmail.body_text;
+
+        // Replace PDF URL
+        if (signedPdfUrl) {
+          bodyHtml = bodyHtml.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl);
+          bodyText = bodyText.replaceAll('{{PDF_URL}}', signedPdfUrl).replaceAll(storedPdfUrl, signedPdfUrl);
+        }
+
+        // Replace Infographic URL
+        if (signedInfographicUrl) {
+          bodyHtml = bodyHtml.replaceAll('{{INFOGRAPHIC_URL}}', signedInfographicUrl).replaceAll(storedInfographicUrl, signedInfographicUrl);
+          bodyText = bodyText.replaceAll('{{INFOGRAPHIC_URL}}', signedInfographicUrl).replaceAll(storedInfographicUrl, signedInfographicUrl);
+        }
 
         sendDeliveryEmail(
           lead._id.toString(),
