@@ -5,6 +5,7 @@ import { User } from '../models/User.js';
 import { config } from './index.js';
 import { logger } from '../utils/logger.js';
 import type { IUser } from '../types/index.js';
+import { SlackService } from '../services/slackService.js';
 
 // ============================================
 // Serialize / Deserialize
@@ -136,6 +137,13 @@ if (config.google.clientId && config.google.clientSecret) {
           });
 
           logger.info('New user created via Google OAuth', { userId: user._id, email });
+
+          // Send Slack notification for new user
+          try {
+            await SlackService.sendNewUserNotification(user.email, user.name);
+          } catch (slackError) {
+            logger.error('Failed to send Slack notification for new user:', slackError as Error);
+          }
 
           // Send welcome email for Google OAuth users
           try {
