@@ -29,6 +29,11 @@ import type { AuthenticatedRequest, ApiResponse, ILeadMagnet, IQuiz, IBrandSetti
  * Takes first 60 characters or first 7 words (whichever is shorter)
  */
 function generateSlugFromTitle(title: string): string {
+  // Handle empty/invalid titles (edge case from AI)
+  if (!title || !title.trim()) {
+    return `generated-${Date.now()}`;
+  }
+  
   // Take first 7 words or first 60 chars, whichever is shorter
   const words = title.split(/\s+/);
   const truncated = words.length > 7 
@@ -37,7 +42,10 @@ function generateSlugFromTitle(title: string): string {
   
   const limited = truncated.length > 60 ? truncated.substring(0, 60) : truncated;
   
-  return slugify(limited, { lower: true, strict: true });
+  const slug = slugify(limited, { lower: true, strict: true });
+  
+  // Fallback if slugify returns empty string
+  return slug || `generated-${Date.now()}`;
 }
 
 async function attachSignedPdfUrl<T extends { pdfUrl?: string }>(

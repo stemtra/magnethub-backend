@@ -76,7 +76,13 @@ export const config = {
 
   // Slack
   slack: {
-    webhookMagnethubProduction: process.env.SLACK_WEBHOOK_MAGNETHUB_PRODUCTION || '',
+    webhookProductionUsers: process.env.SLACK_WEBHOOK_PRODUCTION_USERS || '',
+    webhookSuggestions: process.env.SLACK_WEBHOOK_SUGGESTIONS || '',
+    webhookNewCustomer: process.env.SLACK_WEBHOOK_NEW_CUSTOMER || '',
+    webhookCustomerReturned: process.env.SLACK_WEBHOOK_CUSTOMER_RETURNED || '',
+    webhookRecurringPayment: process.env.SLACK_WEBHOOK_RECURRING_PAYMENT || '',
+    webhookPaymentFailed: process.env.SLACK_WEBHOOK_PAYMENT_FAILED || '',
+    webhookCancelledSubscription: process.env.SLACK_WEBHOOK_CANCELLED_SUBSCRIPTION || '',
   },
 
   // Plan limits
