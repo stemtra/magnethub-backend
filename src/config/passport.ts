@@ -6,6 +6,7 @@ import { config } from './index.js';
 import { logger } from '../utils/logger.js';
 import type { IUser } from '../types/index.js';
 import { SlackService } from '../services/slackService.js';
+import { BrevoService } from '../services/brevoService.js';
 
 // ============================================
 // Serialize / Deserialize
@@ -143,6 +144,13 @@ if (config.google.clientId && config.google.clientSecret) {
             await SlackService.sendNewUserNotification(user.email, user.name);
           } catch (slackError) {
             logger.error('Failed to send Slack notification for new user:', slackError as Error);
+          }
+
+          // Create contact in Brevo for marketing automation
+          try {
+            await BrevoService.createContact(user.email, user.name, 'google_oauth');
+          } catch (brevoError) {
+            logger.error('Failed to create Brevo contact for new user:', brevoError as Error);
           }
 
           // Send welcome email for Google OAuth users

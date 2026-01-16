@@ -7,4 +7,5 @@ export * from './storageService.js';
 export * from './emailService.js';
 export * from './templateService.js';
 export * from './slackService.js';
+export * from './brevoService.js';
 

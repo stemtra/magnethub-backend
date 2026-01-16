@@ -85,6 +85,11 @@ export const config = {
     webhookCancelledSubscription: process.env.SLACK_WEBHOOK_CANCELLED_SUBSCRIPTION || '',
   },
 
+  // Brevo (Email Marketing)
+  brevo: {
+    apiKey: process.env.BREVO_API_KEY || '',
+  },
+
   // Plan limits
   planLimits: {
     free: {
