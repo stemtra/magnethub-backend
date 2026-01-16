@@ -7,7 +7,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc && node scripts/copyTemplates.mjs",
     "start": "node dist/index.js",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "sync-brevo": "tsx src/scripts/syncUsersToBrevo.ts"
   },
   "keywords": [
     "lead-magnet",

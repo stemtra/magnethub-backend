@@ -53,7 +53,7 @@ export class BrevoService {
       return {} as T;
     }
 
-    return response.json();
+    return response.json() as Promise<T>;
   }
 
   /**
