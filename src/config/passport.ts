@@ -149,6 +149,8 @@ if (config.google.clientId && config.google.clientSecret) {
           // Create contact in Brevo for marketing automation
           try {
             await BrevoService.createContact(user.email, user.name, 'google_oauth');
+            // Add contact to main user list (ID 5)
+            await BrevoService.addContactsToList([user.email], 5);
           } catch (brevoError) {
             logger.error('Failed to create Brevo contact for new user:', brevoError as Error);
           }

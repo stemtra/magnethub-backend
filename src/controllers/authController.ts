@@ -7,6 +7,7 @@ import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
 import { SlackService } from '../services/slackService.js';
+import { BrevoService } from '../services/brevoService.js';
 import { welcomeEmail } from '../templates/emailTemplates.js';
 import { sendEmail } from '../services/emailService.js';
 import { setSentryUser, clearSentryUser } from '../utils/sentry.js';
@@ -99,6 +100,15 @@ export async function register(
       await SlackService.sendNewUserNotification(user.email, user.name);
     } catch (slackError) {
       logger.error('Failed to send Slack notification for new user:', slackError as Error);
+    }
+
+    // Create contact in Brevo for marketing automation
+    try {
+      await BrevoService.createContact(user.email, user.name, 'email_password');
+      // Add contact to main user list (ID 5)
+      await BrevoService.addContactsToList([user.email], 5);
+    } catch (brevoError) {
+      logger.error('Failed to create Brevo contact for new user:', brevoError as Error);
     }
 
     // Send welcome email

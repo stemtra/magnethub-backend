@@ -120,4 +120,31 @@ export class BrevoService {
       return false;
     }
   }
+
+  /**
+   * Add contacts to a specific list in Brevo
+   */
+  static async addContactsToList(
+    emails: string[],
+    listId: number
+  ): Promise<{ success: string[]; failure: string[] } | null> {
+    if (!this.isConfigured()) {
+      logger.warn('Brevo API key not configured - skipping add to list');
+      return null;
+    }
+
+    try {
+      logger.info(`Adding ${emails.length} contact(s) to Brevo list ${listId}`);
+      const result = await this.makeRequest<{ contacts: { success: string[]; failure: string[] } }>(
+        `/contacts/lists/${listId}/contacts/add`,
+        'POST',
+        { emails }
+      );
+      logger.info(`Successfully added contacts to Brevo list ${listId}`, result.contacts);
+      return result.contacts;
+    } catch (error) {
+      logger.error(`Failed to add contacts to Brevo list ${listId}:`, error as Error);
+      return null;
+    }
+  }
 }

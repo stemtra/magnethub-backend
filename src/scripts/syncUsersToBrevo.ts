@@ -42,8 +42,10 @@ async function syncUsersToBrevo() {
         );
         
         if (result) {
+          // Add contact to main user list (ID 5)
+          await BrevoService.addContactsToList([user.email], 5);
           successCount++;
-          logger.info(`✅ Successfully added ${user.email} to Brevo`);
+          logger.info(`✅ Successfully added ${user.email} to Brevo and list 5`);
         } else {
           skippedCount++;
           logger.warn(`⚠️ Skipped ${user.email} (Brevo not configured or other issue)`);
