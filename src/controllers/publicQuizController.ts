@@ -3,6 +3,7 @@ import { Quiz } from '../models/Quiz.js';
 import { QuizResponse } from '../models/QuizResponse.js';
 import { User } from '../models/User.js';
 import { Brand } from '../models/Brand.js';
+import { Lead } from '../models/Lead.js';
 import { sendQuizResultEmail } from '../services/emailService.js';
 import { calculateQuizResult, validateQuizResponses } from '../utils/quizCalculation.js';
 import { AppError } from '../utils/AppError.js';
@@ -407,6 +408,38 @@ export async function submitQuiz(
       statsUpdate['stats.emailsCaptured'] = 1;
     }
     await Quiz.updateOne({ _id: quiz._id }, { $inc: statsUpdate });
+
+    // Create Lead object if email was captured AND quiz has a leadMagnetId
+    if (isNewEmailCapture && quiz.leadMagnetId) {
+      try {
+        const sourceInfo = detectSource(req);
+        await Lead.create({
+          email: email!.toLowerCase(),
+          leadMagnetId: quiz.leadMagnetId,
+          deliveryStatus: 'sent', // Quiz result email is sent, so mark as sent
+          referrer: sourceInfo.referrer,
+          source: sourceInfo.source,
+          medium: sourceInfo.medium,
+          campaign: sourceInfo.campaign,
+        });
+        logger.info('Lead created from quiz submission', {
+          quizId: quiz._id,
+          leadMagnetId: quiz.leadMagnetId,
+          email: email!.toLowerCase(),
+        });
+      } catch (leadError: any) {
+        // If lead creation fails (e.g. duplicate email), log but don't fail the request
+        if (leadError.code === 11000) {
+          logger.info('Duplicate lead - already exists', {
+            quizId: quiz._id,
+            leadMagnetId: quiz.leadMagnetId,
+            email: email!.toLowerCase(),
+          });
+        } else {
+          logger.error('Failed to create lead from quiz submission', leadError);
+        }
+      }
+    }
 
     logger.info('Quiz submitted', {
       quizId: quiz._id,

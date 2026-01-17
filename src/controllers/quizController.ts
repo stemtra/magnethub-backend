@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import { Quiz } from '../models/Quiz.js';
 import { QuizResponse } from '../models/QuizResponse.js';
 import { Brand } from '../models/Brand.js';
+import { LeadMagnet } from '../models/LeadMagnet.js';
 import {
   generateQuizQuestions,
   generateQuizResults,
@@ -63,16 +64,36 @@ export async function create(
     }
 
     // Validate brandId if provided
+    let brand = null;
     if (brandId) {
-      const brand = await Brand.findOne({ _id: brandId, userId: req.user._id });
+      brand = await Brand.findOne({ _id: brandId, userId: req.user._id });
       if (!brand) {
         throw AppError.badRequest('Selected brand not found');
       }
     }
 
+    // Create LeadMagnet record (quiz is a type of lead magnet)
+    const leadMagnet = await LeadMagnet.create({
+      userId: req.user._id,
+      brandId: brandId || undefined,
+      sourceType: brand?.sourceType || 'website',
+      sourceUrl: brand?.sourceUrl || '',
+      goal: 'get_leads',
+      type: 'quiz',
+      tone: 'professional',
+      title,
+      slug,
+      isPublished: false, // Draft until quiz is published
+      isPublic: false,
+      generationStatus: 'complete',
+      landingStatus: 'ready',
+      emailsStatus: 'ready',
+    });
+
     const quiz = await Quiz.create({
       userId: req.user._id,
       brandId: brandId || undefined,
+      leadMagnetId: leadMagnet._id,
       title,
       subtitle,
       coverImageUrl,
@@ -89,6 +110,10 @@ export async function create(
       fontStyle: fontStyle || 'modern',
       status: 'draft',
     });
+
+    // Link quiz back to lead magnet
+    leadMagnet.quizId = quiz._id;
+    await leadMagnet.save();
 
     logger.info('Quiz created', {
       userId: req.user._id,
@@ -275,6 +300,11 @@ export async function remove(
     // Delete associated responses
     await QuizResponse.deleteMany({ quizId: id });
 
+    // Delete associated lead magnet
+    if (quiz.leadMagnetId) {
+      await LeadMagnet.deleteOne({ _id: quiz.leadMagnetId });
+    }
+
     // Delete the quiz
     await quiz.deleteOne();
 
@@ -338,6 +368,14 @@ export async function publish(
     quiz.status = 'published';
     await quiz.save();
 
+    // Also publish the associated lead magnet
+    if (quiz.leadMagnetId) {
+      await LeadMagnet.updateOne(
+        { _id: quiz.leadMagnetId },
+        { isPublished: true }
+      );
+    }
+
     logger.info('Quiz published', {
       userId: req.user._id,
       quizId: quiz._id,
@@ -379,6 +417,14 @@ export async function unpublish(
 
     quiz.status = 'draft';
     await quiz.save();
+
+    // Also unpublish the associated lead magnet
+    if (quiz.leadMagnetId) {
+      await LeadMagnet.updateOne(
+        { _id: quiz.leadMagnetId },
+        { isPublished: false }
+      );
+    }
 
     logger.info('Quiz unpublished', {
       userId: req.user._id,

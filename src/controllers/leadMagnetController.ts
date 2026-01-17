@@ -188,10 +188,29 @@ export async function generateUnified(
         counter++;
       }
 
+      // Create LeadMagnet record first (quiz is a type of lead magnet)
+      const leadMagnet = await LeadMagnet.create({
+        userId: req.user._id,
+        brandId: brand._id,
+        sourceType: brand.sourceType,
+        sourceUrl: brand.sourceUrl,
+        goal: 'get_leads',
+        type: 'quiz',
+        tone: 'professional',
+        title: generatedQuiz.title,
+        slug,
+        isPublished: true,
+        isPublic,
+        generationStatus: 'complete',
+        landingStatus: 'ready', // Quiz has its own landing page
+        emailsStatus: 'ready',
+      });
+
       // Map generated quiz to Quiz model structure
       const quiz = await Quiz.create({
         userId: req.user._id,
         brandId: brand._id,
+        leadMagnetId: leadMagnet._id,
         title: generatedQuiz.title,
         subtitle: generatedQuiz.subtitle,
         slug,
@@ -217,6 +236,10 @@ export async function generateUnified(
         status: 'published',
         isPublic,
       });
+
+      // Link quiz back to lead magnet
+      leadMagnet.quizId = quiz._id;
+      await leadMagnet.save();
 
       // Map result IDs back to answers
       quiz.questions.forEach((question, qIdx) => {

@@ -150,7 +150,8 @@ export type LeadMagnetType =
   | 'infographic'
   | 'uploaded_pdf'
   | 'uploaded_image'
-  | 'uploaded_audio';
+  | 'uploaded_audio'
+  | 'quiz';
 export type LeadMagnetTone = 'professional' | 'friendly' | 'expert' | 'persuasive';
 export type UploadedFileType = 'pdf' | 'image' | 'audio';
 export type InfographicStyle = 'minimal' | 'modern' | 'bold' | 'professional';
@@ -163,6 +164,7 @@ export interface ILeadMagnet extends Document {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
   brandId?: Types.ObjectId; // Reference to the brand used
+  quizId?: Types.ObjectId; // Reference to quiz if type is 'quiz'
   sourceType: SourceType;
   sourceUrl: string;
   websiteUrl?: string; // @deprecated - use sourceUrl instead
@@ -288,6 +290,7 @@ export interface IQuiz extends Document {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
   brandId?: Types.ObjectId;
+  leadMagnetId?: Types.ObjectId;
   title: string;
   subtitle?: string;
   coverImageUrl?: string;

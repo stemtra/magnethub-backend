@@ -153,6 +153,11 @@ const quizSchema = new Schema<IQuiz>(
       ref: 'Brand',
       index: true,
     },
+    leadMagnetId: {
+      type: Schema.Types.ObjectId,
+      ref: 'LeadMagnet',
+      index: true,
+    },
     title: {
       type: String,
       required: [true, 'Quiz title is required'],

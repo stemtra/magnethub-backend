@@ -14,6 +14,11 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
       ref: 'Brand',
       index: true,
     },
+    quizId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Quiz',
+      index: true,
+    },
     sourceType: {
       type: String,
       enum: {
@@ -49,8 +54,8 @@ const leadMagnetSchema = new Schema<ILeadMagnet>(
       type: String,
       required: [true, 'Type is required'],
       enum: {
-        values: ['guide', 'checklist', 'mistakes', 'blueprint', 'swipefile', 'cheatsheet', 'casestudy', 'infographic', 'uploaded_pdf', 'uploaded_image', 'uploaded_audio'],
-        message: 'Type must be one of: guide, checklist, mistakes, blueprint, swipefile, cheatsheet, casestudy, infographic, uploaded_pdf, uploaded_image, uploaded_audio',
+        values: ['guide', 'checklist', 'mistakes', 'blueprint', 'swipefile', 'cheatsheet', 'casestudy', 'infographic', 'uploaded_pdf', 'uploaded_image', 'uploaded_audio', 'quiz'],
+        message: 'Type must be one of: guide, checklist, mistakes, blueprint, swipefile, cheatsheet, casestudy, infographic, uploaded_pdf, uploaded_image, uploaded_audio, quiz',
       },
     },
     tone: {
